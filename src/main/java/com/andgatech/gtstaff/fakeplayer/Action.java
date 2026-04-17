@@ -31,16 +31,9 @@ public class Action {
 
     public boolean tick() {
         if (done) return false;
-        if (tickCount < offset) {
-            tickCount++;
-            return false;
-        }
-        if (limit == 0) {
-            done = true;
-            return false;
-        }
         tickCount++;
-        if (tickCount % interval != 0) return false;
+        if (tickCount <= offset) return false;
+        if ((tickCount - offset) % interval != 0) return false;
         if (limit > 0) {
             limit--;
             if (limit <= 0) done = true;

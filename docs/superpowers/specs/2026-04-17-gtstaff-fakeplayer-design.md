@@ -179,6 +179,15 @@ public static class Action {
 - 默认范围：16 格
 - 仅在**状态变化时**上报（避免刷屏）
 
+### 3.2.1 GT5U 参考实现
+
+- 监控状态判定参考 `GT5-Unofficial-master` 的无人机监控链路：`MTEHatchDroneDownLink` 与 `DroneConnection`
+- 运行态来源：`IGregTechTileEntity.isActive()`
+- 跳电来源：`IGregTechTileEntity.getLastShutDownReason()`
+- 维护来源：`MTEMultiBlockBase.getIdealStatus()` 与 `getRepairStatus()`
+- 输出满来源：`MTEMultiBlockBase.getCheckRecipeResult()`
+- 监控对象范围：以 fake player 为中心，只扫描当前世界已加载、且位于监控半径内的 `MTEMultiBlockBase` 多方块机器
+
 ### 3.3 上报事件
 
 | 事件类型 | 触发条件 | 消息示例 |
@@ -204,6 +213,12 @@ static class MachineState {
     boolean wasOutputFull;
 }
 ```
+
+### 3.5 1.7.10 / GTNH 适配备注
+
+- `ShutDownReason` 与 `CheckRecipeResult` 不能可靠地用 `getID()` 区分具体语义，因为 GT 的 `SimpleShutDownReason` / `SimpleCheckRecipeResult` 会复用同一个 `simple_result`
+- 跳电应优先按 `ShutDownReasonRegistry.POWER_LOSS` 身份比较；若运行时对象不是同一个实例，可再用反射尝试读取 `getKey()`
+- 输出满应比较 `CheckRecipeResultRegistry.ITEM_OUTPUT_FULL` / `FLUID_OUTPUT_FULL` 常量，并允许使用 `equals(...)` 兼容可能的结果对象拷贝
 
 ## 四、命令系统
 
@@ -474,4 +489,23 @@ EntityPlayerMPMixin.onUpdate()
 
 - 虚拟玩家的物品栏、经验等由 Minecraft 原版玩家数据系统自动保存
 - `FakePlayerRegistry` 在服务器停止时将映射关系（owner → bots）写入 `data/gtstaff_registry.dat`（NBT）
-- 服务器启动时自动恢复所有虚拟玩家
+- 首版实现先在服务器启动时恢复 owner 映射，不自动恢复 fake player 实体；是否支持跨重启自动重建实体，放到后续任务单独评估
+
+## 八、当前实施计划（2026-04-17 更新）
+
+### 已完成
+
+- Task 1 至 Task 6：fake player 核心、网络生命周期、Mixin、动作系统、命令系统均已落地并有对应单元测试
+- Task 7 监控部分：已接入 GT 多方块真实扫描、状态 diff 上报、registry 持久化、`/gtstaff` 主界面与子窗口骨架
+- GT 机器监控实现已参考 `GT5-Unofficial-master` 无人机监控语义，并通过离线 Gradle 回归验证
+
+### 进行中
+
+- Task 7 剩余部分：为 `FakePlayerSpawnWindow`、`FakePlayerInventoryWindow`、`FakePlayerLookWindow` 补齐真实交互，而不是仅显示占位文本
+- 明确 fake player 的跨重启恢复策略：继续保持“仅恢复 owner 映射”，或增加实体自动重建能力
+
+### 下一步
+
+1. 为 MUI2 子窗口接入真实数据与按钮行为，至少能完成创建 bot、查看背包、设置视角。
+2. 补用户提示与界面同步细节，确保命令路径与 UI 路径行为一致。
+3. 统一执行 `--offline` 测试与编译回归，并在游戏内做一轮最终烟测。

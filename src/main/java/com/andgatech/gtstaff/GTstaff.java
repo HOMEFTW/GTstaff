@@ -11,17 +11,18 @@ import cpw.mods.fml.common.event.FMLPostInitializationEvent;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
 import cpw.mods.fml.common.event.FMLServerStartedEvent;
 import cpw.mods.fml.common.event.FMLServerStartingEvent;
+import cpw.mods.fml.common.event.FMLServerStoppingEvent;
 
-@Mod(modid = Tags.MODID, version = Tags.VERSION, name = Tags.MODNAME, dependencies = "required-after:gregtech;required-after:gtnhlib;required-after:modularui;", acceptedMinecraftVersions = "[1.7.10]")
+@Mod(modid = GTstaff.MODID, version = GTstaff.VERSION, name = GTstaff.MOD_NAME, dependencies = "required-after:gregtech;required-after:gtnhlib;required-after:modularui;", acceptedMinecraftVersions = "[1.7.10]")
 public class GTstaff {
 
-    public static final String MODID = Tags.MODID;
-    public static final String MOD_ID = Tags.MODID;
-    public static final String MOD_NAME = Tags.MODNAME;
+    public static final String MODID = "gtstaff";
+    public static final String MOD_ID = MODID;
+    public static final String MOD_NAME = "GTstaff";
     public static final String VERSION = Tags.VERSION;
     public static final String RESOURCE_ROOT_ID = "gtstaff";
 
-    public static final Logger LOG = LogManager.getLogger(Tags.MODID);
+    public static final Logger LOG = LogManager.getLogger(MODID);
 
     @Mod.Instance
     public static GTstaff instance;
@@ -58,6 +59,11 @@ public class GTstaff {
     @Mod.EventHandler
     public void serverStarted(FMLServerStartedEvent event) {
         proxy.serverStarted(event);
+    }
+
+    @Mod.EventHandler
+    public void serverStopping(FMLServerStoppingEvent event) {
+        proxy.serverStopping(event);
     }
     // endregion
 

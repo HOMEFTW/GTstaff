@@ -4,7 +4,13 @@
   "package": "com.andgatech.gtstaff.mixin",
   "target": "@env(DEFAULT)",
   "compatibilityLevel": "JAVA_8",
-  "mixins": [],
+  "mixins": [
+    "EntityPlayerMPMixin",
+    "EntityPlayerMP_RespawnMixin",
+    "ServerConfigurationManagerMixin",
+    "Entity_KnockbackMixin",
+    "EntityPlayerMP_TickFreezeMixin"
+  ],
   "client": [],
   "server": []
 }

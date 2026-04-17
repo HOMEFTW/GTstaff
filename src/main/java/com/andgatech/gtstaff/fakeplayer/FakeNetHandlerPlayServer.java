@@ -1,24 +1,22 @@
 package com.andgatech.gtstaff.fakeplayer;
 
+import net.minecraft.entity.player.EntityPlayerMP;
+import net.minecraft.network.NetworkManager;
 import net.minecraft.network.NetHandlerPlayServer;
+import net.minecraft.server.MinecraftServer;
 
 public class FakeNetHandlerPlayServer extends NetHandlerPlayServer {
 
-    public FakeNetHandlerPlayServer() {
-        super(null, null, null);
+    public FakeNetHandlerPlayServer(MinecraftServer server, NetworkManager networkManager, EntityPlayerMP player) {
+        super(server, networkManager, player);
     }
 
     @Override
-    public void disconnect(String reason) {
-        // Only respond to idling and duplicate_login
-        if ("idling".equals(reason) || "duplicate_login".equals(reason)) {
-            // Trigger FakePlayer.kill()
+    public void kickPlayerFromServer(String reason) {
+        if ("You have been idle for too long!".equals(reason) || "You logged in from another location".equals(reason)) {
+            if (playerEntity instanceof FakePlayer) {
+                ((FakePlayer) playerEntity).kill();
+            }
         }
-    }
-
-    @Override
-    public void setPlayerLocation(double x, double y, double z, float yaw, float pitch) {
-        super.setPlayerLocation(x, y, z, yaw, pitch);
-        // Immediately reset position sync after teleport
     }
 }
