@@ -17,6 +17,7 @@ out/
 # OS
 .DS_Store
 Thumbs.db
+.worktrees/
 
 # Minecraft run directories
 run/
