@@ -152,32 +152,40 @@ public class FollowService {
         if (server == null) return;
 
         int targetDim = target.dimension;
+        WorldServer oldWorld = (WorldServer) fakePlayer.worldObj;
         WorldServer newWorld = server.worldServerForDimension(targetDim);
         if (newWorld == null) return;
+        if (fakePlayer.dimension == targetDim && oldWorld == newWorld) return;
 
-        try {
-            server.getConfigurationManager().transferPlayerToDimension(fakePlayer, targetDim);
-        } catch (Exception e) {
-            // If vanilla transfer fails, skip this attempt and retry next cycle
-            previousTargetDimension = Integer.MIN_VALUE;
-            return;
+        // 1. Remove from server player list
+        server.getConfigurationManager().playerEntityList.remove(fakePlayer);
+
+        // 2. Remove from old world (sets isDead=true)
+        if (!fakePlayer.isDead) {
+            oldWorld.removeEntity(fakePlayer);
         }
 
-        // Verify dimension actually changed
-        if (fakePlayer.dimension != targetDim) {
-            previousTargetDimension = Integer.MIN_VALUE;
-            return;
-        }
-
-        // Override position to match target (vanilla transfer uses portal/spawn point)
-        fakePlayer.setPositionAndUpdate(target.posX, target.posY, target.posZ);
+        // 3. Reset for re-spawning
+        fakePlayer.isDead = false;
+        fakePlayer.dimension = targetDim;
+        fakePlayer.setWorld(newWorld);
         fakePlayer.theItemInWorldManager.setWorld(newWorld);
+        fakePlayer.setLocationAndAngles(target.posX, target.posY, target.posZ, fakePlayer.rotationYaw, fakePlayer.rotationPitch);
+        fakePlayer.addedToChunk = false;
 
+        // 4. Spawn in new world
+        newWorld.spawnEntityInWorld(fakePlayer);
+
+        // 5. Re-add to server player list
+        if (!server.getConfigurationManager().playerEntityList.contains(fakePlayer)) {
+            server.getConfigurationManager().playerEntityList.add(fakePlayer);
+        }
+
+        // 6. Sync position and flying state
         if (fakePlayer.playerNetServerHandler != null) {
             fakePlayer.playerNetServerHandler.setPlayerLocation(target.posX, target.posY, target.posZ, fakePlayer.rotationYaw, fakePlayer.rotationPitch);
         }
 
-        // Sync flying state after dimension transfer
         fakePlayer.capabilities.isFlying = target.capabilities.isFlying;
         if (target.capabilities.isFlying) {
             fakePlayer.capabilities.allowFlying = true;
