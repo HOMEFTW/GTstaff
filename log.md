@@ -1,5 +1,83 @@
 # 开发日志
 
+## 2026-04-18：GT机器监控增强 + 假人颜色 + 中文翻译 + 提醒频率
+
+### 已完成
+- 扩展 `MachineState` 新增8个故障字段（pollutionFail/noRepair/noTurbine/noMachinePart/insufficientDynamo/outOfResource/insufficientPower/insufficientVoltage），`hasProblems()` 覆盖全部13种故障
+- 重写 `MachineMonitorService.createStateFromGregTech()`，接入 `ShutDownReasonRegistry` 全量检测（POWER_LOSS/POLLUTION_FAIL/STRUCTURE_INCOMPLETE/NO_REPAIR/NO_TURBINE/NO_MACHINE_PART/INSUFFICIENT_DYNAMO/out_of_fluid/out_of_stuff）和 `CheckRecipeResult.getID()` 检测（insufficient_power/insufficient_voltage）
+- 新增 `matchesReason()` 使用引用比较+`getKey()`反射兜底，`isOutOfResource()` 检测 out_of_fluid/out_of_stuff，`matchesRecipeResult()` 检测 result ID
+- 将所有监控报告翻译为中文（断电/需要维护/输出已满/结构不完整/污染排放失败/无法修复/缺少涡轮/机器部件错误/发电机不足/资源耗尽/电力不足/电压不足/已恢复正常）
+- 为每个假人分配颜色（`FakePlayer.getChatColor()`/`colorizeName()`），基于名称hash从10种 `EnumChatFormatting` 中选取，聊天消息通过 `ChatStyle.setColor()` 着色
+- UI中机器人列表和总览页面通过 `§x` 格式代码显示假人名称颜色
+- 监控页面改用 `ListWidget+VerticalScrollData` 可滚动列表替换固定大小 TextWidget
+- 新增可配置 `reminderInterval`（默认600 tick=30秒），UI添加4个频率按钮（10秒/30秒/1分钟/5分钟），当前选中频率显示 `[标签]` 高亮
+- `PersistedBotData` 新增 `reminderInterval` 字段，支持 NBT 持久化保存和恢复
+- 概览和问题提醒改为逐行发送（`buildOverviewLines()`/`buildProblemSummaryLines()`），聊天栏每台机器独占一条消息
+- 新增7个测试覆盖新故障类型检测、中文断言、可配置提醒频率
+- 通过 `./gradlew spotlessApply test build` 全部通过
+
+### 做出的决定
+- 跨 classloader 的 `ShutDownReason` 比较同时使用 `==` 引用比较和 `getKey()` 反射兜底
+- 默认提醒频率设为30秒（600 tick），最小允许60 tick（3秒）
+- 扫描按钮用于UI中手动刷新机器状态文本，不等待自动扫描周期
+- 聊天消息逐行发送而非合并为一条，确保每台机器清晰可读
+
+---
+
+## 2026-04-18：改为直接运行 living update，绕开第二次 PlayerTickEvent
+
+### 已完成
+- 确认 `FakePlayer` 真正触发 `ae2fc` 崩溃的根因是手动调用 `EntityPlayerMP.onUpdateEntity()`，这会再次进入 `EntityPlayer.onUpdate()` 并额外发布一轮 `PlayerTickEvent`
+- 将 `FakePlayer.onUpdate()` 的第二段更新从 `onUpdateEntity()` 改为直接执行 `onLivingUpdate()`，保留 fake player 的移动/跳跃/碰撞更新，但不再触发第二次玩家 tick 事件
+- 删除仅靠识别 `ae2fc` 堆栈后吞 NPE 的旧兼容路径，避免继续在异常白名单上兜圈子
+- 新增 `FakePlayerMovementUpdateTest`，验证新的 movement hook 会执行且不会静默吞掉异常
+- 通过 `./gradlew.bat --offline test --tests com.andgatech.gtstaff.fakeplayer.FakePlayerMovementUpdateTest`
+- 通过 `./gradlew.bat --offline assemble` 重新打包 jar
+
+### 做出的决定
+- 优先修根因，不再依赖“识别外部模组 NPE 后吞掉”的脆弱兼容策略
+- fake player 的“第二段 tick”职责收敛为 living movement update，而不是整段 `onUpdateEntity()`
+
+---
+
+## 2026-04-18：去掉已抑制 AE2FluidCraft 兼容异常的整段堆栈输出
+
+### 已完成
+- 确认 `FakePlayer.runEntityUpdateSafely(...)` 中的 `java.lang.NullPointerException` 堆栈来自 `GTstaff.LOG.warn(..., exception)` 的主动日志输出，而不是新的未捕获崩溃
+- 将兼容日志改为只输出一行简短警告，不再附带被抑制异常的完整堆栈
+- 重新执行 `./gradlew.bat --offline assemble` 打包新的 jar
+
+### 做出的决定
+- 保留一次性告警，方便确认兼容层确实生效
+- 不再把已知外部模组兼容异常打印成完整堆栈，减少误判和日志噪音
+
+---
+
+## 2026-04-18：重新构建包含 fake player 兼容修复的 jar
+
+### 已完成
+- 使用 `./gradlew.bat --offline assemble` 成功重新构建 GTstaff 产物
+- 确认最新修复已打包进 `build/libs/gtstaff-b166ed7-master+b166ed77c1-dirty.jar`
+
+### 做出的决定
+- 当前继续使用离线 `assemble` 作为快速打包路径，不额外触发 `spotlessJavaCheck`
+
+---
+
+## 2026-04-18：收紧 fake player 对 AE2FluidCraft tick NPE 的兼容处理
+
+### 已完成
+- 确认集成服崩溃根因是 `FakePlayer.onUpdateEntity()` 触发 `PlayerTickEvent` 后，`ae2fc` 的 `ClientProxy.tickEvent(...) -> Util.getUltraWirelessTerm(...)` 对 fake player 场景做了空指针假设
+- 将 `FakePlayer` 对 `onUpdateEntity()` 的兼容层从“吞掉所有 `NullPointerException`”收紧为“只忽略已知的 `AE2FluidCraft` fake-player tick NPE，其他 NPE 继续抛出”
+- 新增 `FakePlayerCompatibilityTest`，覆盖“已知 `ae2fc` NPE 被抑制”“无关 `NullPointerException` 不被吞掉”“非 NPE 异常继续抛出”三条回归场景
+- 通过 `./gradlew.bat --offline test --tests com.andgatech.gtstaff.fakeplayer.FakePlayerCompatibilityTest` 验证修复
+
+### 做出的决定
+- 继续在 GTstaff 侧保留兼容性兜底，不要求先修改 `ae2fc`
+- 不再使用过宽的 `catch (NullPointerException)`，避免把 GTstaff 自身或其他真实缺陷静默吞掉
+
+---
+
 ## 2026-04-18：重构 FakePlayerManagerUI 为 CustomNPC 风格分页布局
 
 ### 已完成

@@ -13,7 +13,12 @@ import cpw.mods.fml.common.event.FMLServerStartedEvent;
 import cpw.mods.fml.common.event.FMLServerStartingEvent;
 import cpw.mods.fml.common.event.FMLServerStoppingEvent;
 
-@Mod(modid = GTstaff.MODID, version = GTstaff.VERSION, name = GTstaff.MOD_NAME, dependencies = "required-after:gregtech;required-after:gtnhlib;required-after:modularui;", acceptedMinecraftVersions = "[1.7.10]")
+@Mod(
+    modid = GTstaff.MODID,
+    version = GTstaff.VERSION,
+    name = GTstaff.MOD_NAME,
+    dependencies = "required-after:gregtech;required-after:gtnhlib;required-after:modularui;",
+    acceptedMinecraftVersions = "[1.7.10]")
 public class GTstaff {
 
     public static final String MODID = "gtstaff";

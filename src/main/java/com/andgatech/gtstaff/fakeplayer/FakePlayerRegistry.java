@@ -8,11 +8,11 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
-import net.minecraft.world.WorldSettings;
 import net.minecraft.nbt.CompressedStreamTools;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.world.WorldSettings;
 import net.minecraftforge.common.util.Constants;
 
 public class FakePlayerRegistry {
@@ -31,16 +31,19 @@ public class FakePlayerRegistry {
     private static final String FLYING_KEY = "Flying";
     private static final String MONITORING_KEY = "Monitoring";
     private static final String MONITOR_RANGE_KEY = "MonitorRange";
+    private static final String REMINDER_INTERVAL_KEY = "ReminderInterval";
 
     private static final Map<String, FakePlayer> fakePlayers = new HashMap<String, FakePlayer>();
     private static final Map<String, PersistedBotData> persistedBots = new HashMap<String, PersistedBotData>();
 
     @FunctionalInterface
     public interface BotRestorer {
+
         FakePlayer restore(PersistedBotData data);
     }
 
     public static final class PersistedBotData {
+
         private final String name;
         private final UUID profileId;
         private final UUID ownerUUID;
@@ -54,9 +57,11 @@ public class FakePlayerRegistry {
         private final boolean flying;
         private final boolean monitoring;
         private final int monitorRange;
+        private final int reminderInterval;
 
         private PersistedBotData(String name, UUID profileId, UUID ownerUUID, int dimension, double posX, double posY,
-            double posZ, float yaw, float pitch, int gameTypeId, boolean flying, boolean monitoring, int monitorRange) {
+            double posZ, float yaw, float pitch, int gameTypeId, boolean flying, boolean monitoring, int monitorRange,
+            int reminderInterval) {
             this.name = name;
             this.profileId = profileId;
             this.ownerUUID = ownerUUID;
@@ -70,6 +75,7 @@ public class FakePlayerRegistry {
             this.flying = flying;
             this.monitoring = monitoring;
             this.monitorRange = monitorRange;
+            this.reminderInterval = reminderInterval;
         }
 
         public String getName() {
@@ -123,6 +129,10 @@ public class FakePlayerRegistry {
         public int getMonitorRange() {
             return this.monitorRange;
         }
+
+        public int getReminderInterval() {
+            return this.reminderInterval;
+        }
     }
 
     public static void register(FakePlayer fakePlayer, UUID ownerUUID) {
@@ -158,7 +168,9 @@ public class FakePlayerRegistry {
     public static int getCountByOwner(UUID ownerUUID) {
         return (int) fakePlayers.values()
             .stream()
-            .filter(fp -> fp.getOwnerUUID() != null && fp.getOwnerUUID().equals(ownerUUID))
+            .filter(
+                fp -> fp.getOwnerUUID() != null && fp.getOwnerUUID()
+                    .equals(ownerUUID))
             .count();
     }
 
@@ -181,7 +193,8 @@ public class FakePlayerRegistry {
         NBTTagList botList = new NBTTagList();
         Map<String, PersistedBotData> snapshotByName = new HashMap<String, PersistedBotData>(persistedBots);
         for (FakePlayer fakePlayer : fakePlayers.values()) {
-            snapshotByName.put(normalize(fakePlayer.getCommandSenderName()), snapshot(fakePlayer, fakePlayer.getOwnerUUID()));
+            snapshotByName
+                .put(normalize(fakePlayer.getCommandSenderName()), snapshot(fakePlayer, fakePlayer.getOwnerUUID()));
         }
         for (PersistedBotData data : snapshotByName.values()) {
             if (data == null || data.getName() == null) {
@@ -190,10 +203,16 @@ public class FakePlayerRegistry {
             NBTTagCompound bot = new NBTTagCompound();
             bot.setString(NAME_KEY, data.getName());
             if (data.getProfileId() != null) {
-                bot.setString(PROFILE_ID_KEY, data.getProfileId().toString());
+                bot.setString(
+                    PROFILE_ID_KEY,
+                    data.getProfileId()
+                        .toString());
             }
             if (data.getOwnerUUID() != null) {
-                bot.setString(OWNER_KEY, data.getOwnerUUID().toString());
+                bot.setString(
+                    OWNER_KEY,
+                    data.getOwnerUUID()
+                        .toString());
             }
             bot.setInteger(DIMENSION_KEY, data.getDimension());
             bot.setDouble(POS_X_KEY, data.getPosX());
@@ -205,6 +224,7 @@ public class FakePlayerRegistry {
             bot.setBoolean(FLYING_KEY, data.isFlying());
             bot.setBoolean(MONITORING_KEY, data.isMonitoring());
             bot.setInteger(MONITOR_RANGE_KEY, data.getMonitorRange());
+            bot.setInteger(REMINDER_INTERVAL_KEY, data.getReminderInterval());
             botList.appendTag(bot);
         }
         root.setTag(ROOT_KEY, botList);
@@ -249,10 +269,12 @@ public class FakePlayerRegistry {
                 double posZ = bot.hasKey(POS_Z_KEY) ? bot.getDouble(POS_Z_KEY) : Double.NaN;
                 float yaw = bot.hasKey(YAW_KEY) ? bot.getFloat(YAW_KEY) : 0.0F;
                 float pitch = bot.hasKey(PITCH_KEY) ? bot.getFloat(PITCH_KEY) : 0.0F;
-                int gameTypeId = bot.hasKey(GAME_TYPE_KEY) ? bot.getInteger(GAME_TYPE_KEY) : WorldSettings.GameType.SURVIVAL.getID();
+                int gameTypeId = bot.hasKey(GAME_TYPE_KEY) ? bot.getInteger(GAME_TYPE_KEY)
+                    : WorldSettings.GameType.SURVIVAL.getID();
                 boolean flying = bot.hasKey(FLYING_KEY) && bot.getBoolean(FLYING_KEY);
                 boolean monitoring = bot.hasKey(MONITORING_KEY) && bot.getBoolean(MONITORING_KEY);
                 int monitorRange = bot.hasKey(MONITOR_RANGE_KEY) ? bot.getInteger(MONITOR_RANGE_KEY) : 16;
+                int reminderInterval = bot.hasKey(REMINDER_INTERVAL_KEY) ? bot.getInteger(REMINDER_INTERVAL_KEY) : 600;
 
                 persistedBots.put(
                     normalizedName,
@@ -269,9 +291,8 @@ public class FakePlayerRegistry {
                         gameTypeId,
                         flying,
                         monitoring,
-                        monitorRange
-                    )
-                );
+                        monitorRange,
+                        reminderInterval));
             }
         } catch (IOException e) {
             throw new IllegalStateException("Unable to load fake player registry from " + file.getAbsolutePath(), e);
@@ -300,6 +321,7 @@ public class FakePlayerRegistry {
             fakePlayer.setOwnerUUID(data.getOwnerUUID());
             fakePlayer.setMonitoring(data.isMonitoring());
             fakePlayer.setMonitorRange(data.getMonitorRange());
+            fakePlayer.setReminderInterval(data.getReminderInterval());
             register(fakePlayer, data.getOwnerUUID());
         }
     }
@@ -309,8 +331,11 @@ public class FakePlayerRegistry {
     }
 
     private static PersistedBotData snapshot(FakePlayer fakePlayer, UUID ownerUUID) {
-        UUID profileId = fakePlayer.getGameProfile() == null ? null : fakePlayer.getGameProfile().getId();
-        WorldSettings.GameType gameType = fakePlayer.theItemInWorldManager == null ? null : fakePlayer.theItemInWorldManager.getGameType();
+        UUID profileId = fakePlayer.getGameProfile() == null ? null
+            : fakePlayer.getGameProfile()
+                .getId();
+        WorldSettings.GameType gameType = fakePlayer.theItemInWorldManager == null ? null
+            : fakePlayer.theItemInWorldManager.getGameType();
         int gameTypeId = gameType == null ? WorldSettings.GameType.SURVIVAL.getID() : gameType.getID();
         boolean flying = fakePlayer.capabilities != null && fakePlayer.capabilities.isFlying;
         return new PersistedBotData(
@@ -326,7 +351,7 @@ public class FakePlayerRegistry {
             gameTypeId,
             flying,
             fakePlayer.isMonitoring(),
-            fakePlayer.getMonitorRange()
-        );
+            fakePlayer.getMonitorRange(),
+            fakePlayer.getReminderInterval());
     }
 }

@@ -49,11 +49,11 @@ class CommandGTstaffTest {
                 if (returnType == float.class) return 0F;
                 if (returnType == double.class) return 0D;
                 return null;
-            }
-        );
+            });
     }
 
     private static final class TrackingCommandGTstaff extends CommandGTstaff {
+
         private String lastHandler;
 
         @Override

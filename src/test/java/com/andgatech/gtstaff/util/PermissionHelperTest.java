@@ -9,8 +9,6 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
 import java.util.UUID;
 
-import com.mojang.authlib.GameProfile;
-
 import net.minecraft.command.ICommandSender;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.management.ServerConfigurationManager;
@@ -23,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import com.andgatech.gtstaff.config.Config;
 import com.andgatech.gtstaff.fakeplayer.FakePlayer;
 import com.andgatech.gtstaff.fakeplayer.FakePlayerRegistry;
+import com.mojang.authlib.GameProfile;
 
 class PermissionHelperTest {
 
@@ -44,7 +43,9 @@ class PermissionHelperTest {
     void consoleSenderBypassesPlayerChecks() {
         ICommandSender sender = consoleSender();
 
-        assertFalse(PermissionHelper.cantSpawn(sender, "console-bot", null).isPresent());
+        assertFalse(
+            PermissionHelper.cantSpawn(sender, "console-bot", null)
+                .isPresent());
         assertFalse(PermissionHelper.cantManipulate(sender, bot(UUID.randomUUID(), "console-bot-a")));
         assertFalse(PermissionHelper.cantRemove(sender, bot(UUID.randomUUID(), "console-bot-b")));
     }
@@ -87,14 +88,20 @@ class PermissionHelperTest {
         FakePlayerRegistry.register(bot(owner, "bot-a"), owner);
         FakePlayerRegistry.register(bot(owner, "bot-b"), owner);
 
-        assertEquals("Player bot limit reached", PermissionHelper.cantSpawn(sender, "bot-c", null).orElse(null));
+        assertEquals(
+            "Player bot limit reached",
+            PermissionHelper.cantSpawn(sender, "bot-c", null)
+                .orElse(null));
     }
 
     @Test
     void cantSpawnRejectsOnlineDuplicateNames() {
         TestMinecraftServer server = serverWithOnlinePlayer("Bot_Online");
 
-        assertEquals("Player already online", PermissionHelper.cantSpawn(consoleSender(), "Bot_Online", server).orElse(null));
+        assertEquals(
+            "Player already online",
+            PermissionHelper.cantSpawn(consoleSender(), "Bot_Online", server)
+                .orElse(null));
     }
 
     @Test
@@ -102,7 +109,10 @@ class PermissionHelperTest {
         Config.maxBotsTotal = 1;
         FakePlayerRegistry.register(bot(UUID.randomUUID(), "existing-bot"), UUID.randomUUID());
 
-        assertEquals("Server bot limit reached", PermissionHelper.cantSpawn(consoleSender(), "new-bot", null).orElse(null));
+        assertEquals(
+            "Server bot limit reached",
+            PermissionHelper.cantSpawn(consoleSender(), "new-bot", null)
+                .orElse(null));
     }
 
     private static FakePlayer bot(UUID owner, String name) {
@@ -133,13 +143,16 @@ class PermissionHelperTest {
                 if (returnType == float.class) return 0F;
                 if (returnType == double.class) return 0D;
                 return null;
-            }
-        );
+            });
     }
 
     private static TestMinecraftServer serverWithOnlinePlayer(String name) {
         TestMinecraftServer server = new TestMinecraftServer();
-        setField(MinecraftServer.class, server, "serverConfigManager", new TestServerConfigurationManager(server, name));
+        setField(
+            MinecraftServer.class,
+            server,
+            "serverConfigManager",
+            new TestServerConfigurationManager(server, name));
         return server;
     }
 
@@ -166,6 +179,7 @@ class PermissionHelperTest {
     }
 
     private static final class StubFakePlayer extends FakePlayer {
+
         private String name;
         private UUID profileId;
         private boolean monitoring;
@@ -207,6 +221,7 @@ class PermissionHelperTest {
     }
 
     private static final class TestMinecraftServer extends MinecraftServer {
+
         private TestMinecraftServer() {
             super(new File("."), java.net.Proxy.NO_PROXY);
         }
@@ -263,6 +278,7 @@ class PermissionHelperTest {
     }
 
     private static final class TestServerConfigurationManager extends ServerConfigurationManager {
+
         private final String onlineName;
 
         private TestServerConfigurationManager(MinecraftServer server, String onlineName) {
@@ -272,7 +288,8 @@ class PermissionHelperTest {
 
         @Override
         public TestFakePlayer func_152612_a(String username) {
-            return onlineName != null && onlineName.equalsIgnoreCase(username) ? player(UUID.randomUUID(), false) : null;
+            return onlineName != null && onlineName.equalsIgnoreCase(username) ? player(UUID.randomUUID(), false)
+                : null;
         }
     }
 

@@ -11,6 +11,8 @@
     "Entity_KnockbackMixin",
     "EntityPlayerMP_TickFreezeMixin"
   ],
-  "client": [],
+  "client": [
+    "EntityOtherPlayerMP_BodyRotationMixin"
+  ],
   "server": []
 }

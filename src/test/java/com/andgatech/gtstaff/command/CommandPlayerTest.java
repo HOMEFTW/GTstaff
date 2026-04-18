@@ -72,11 +72,11 @@ class CommandPlayerTest {
                 if (returnType == float.class) return 0F;
                 if (returnType == double.class) return 0D;
                 return null;
-            }
-        );
+            });
     }
 
     private static final class TrackingCommandPlayer extends CommandPlayer {
+
         private String lastHandler;
         private String lastBotName;
         private String lastAction;

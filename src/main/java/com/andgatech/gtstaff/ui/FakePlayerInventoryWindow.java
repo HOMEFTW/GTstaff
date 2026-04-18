@@ -17,7 +17,7 @@ public class FakePlayerInventoryWindow extends ModularPanel {
 
     private final FakePlayerManagerService service;
     private final FakePlayerManagerService.InventoryDraft draft;
-    private String statusMessage = "Enter a bot name and refresh to read the inventory.";
+    private String statusMessage = "Enter bot name, then Read.";
     private String inventoryText = "No inventory snapshot loaded.";
 
     public FakePlayerInventoryWindow(ModularPanel parent, EntityPlayerMP player, PanelSyncManager syncManager) {
@@ -37,18 +37,34 @@ public class FakePlayerInventoryWindow extends ModularPanel {
             "gtstaffInventorySnapshot",
             new StringSyncValue(() -> this.inventoryText, val -> this.inventoryText = val));
 
-        relative(parent).leftRel(1).topRel(0).size(220, 196).widgetTheme("backgroundPopup")
+        PopupPanelLayout.centerInParent(this, parent, 220, 196)
+            .widgetTheme("backgroundPopup")
             .child(ButtonWidget.panelCloseButton())
-            .child(new TextWidget("Inventory Snapshot").top(10).left(10))
-            .child(new TextWidget("Bot").top(30).left(10))
-            .child(createBotNameField().top(28).left(40))
-            .child(createRefreshButton().top(28).left(168))
-            .child(new TextWidget(IKey.dynamic(() -> this.statusMessage)).top(52).left(10).size(198, 18))
-            .child(new TextWidget(IKey.dynamic(() -> this.inventoryText)).top(74).left(10).size(198, 112));
+            .child(
+                new TextWidget("Inventory Snapshot").top(10)
+                    .left(10))
+            .child(
+                new TextWidget("Bot").top(30)
+                    .left(10))
+            .child(
+                createBotNameField().top(28)
+                    .left(40))
+            .child(
+                createRefreshButton().top(28)
+                    .left(168))
+            .child(
+                new TextWidget(IKey.dynamic(() -> this.statusMessage)).top(52)
+                    .left(10)
+                    .size(198, 18))
+            .child(
+                new TextWidget(IKey.dynamic(() -> this.inventoryText)).top(74)
+                    .left(10)
+                    .size(198, 112));
     }
 
     private TextFieldWidget createBotNameField() {
-        return new TextFieldWidget().value(new StringSyncValue(() -> this.draft.botName, val -> this.draft.botName = val))
+        return new TextFieldWidget()
+            .value(new StringSyncValue(() -> this.draft.botName, val -> this.draft.botName = val))
             .setMaxLength(16)
             .size(120, 16);
     }

@@ -13,6 +13,7 @@
 - [ ] 在可启动游戏环境中完成最终人工 smoke test：重点验证新的 `/gtstaff ui` 420x200 分页布局、左侧可滚动 bot 列表、四个页签交互、Spawn/Look 弹窗、原版背包容器。
 - [ ] 使用最新 `build/libs/gtstaff-9563983-master+*.jar` 进行客户端实机测试。
 - [ ] 使用最新 `build/libs/gtstaff-7a7f3c5-master+7a7f3c523a-dirty.jar` 进行客户端实机测试，确认集成服启动、MUI2 管理台与 chest-style 背包 GUI 的行为。
+- [ ] 使用最新 `build/libs/gtstaff-b166ed7-master+b166ed77c1-dirty.jar` 进行客户端/集成服实机测试，确认监控增强、颜色分配、提醒频率、聊天换行等功能正常。
 - [ ] 如需让 `./gradlew.bat build` 全绿，补修 `spotlessJavaCheck` 的 CRLF/LF 格式问题。
 
 ## 未来想法
@@ -20,6 +21,13 @@
 - [ ] 继续扩展 `Actions / Monitor` 页签，把常用控制与监控摘要直接放进主管理台右侧。
 
 ## 已完成
+- [x] 修复 fake player 手动调用 `onUpdateEntity()` 导致第二次 `PlayerTickEvent` 触发 `ae2fc` 崩溃的问题，并改为直接运行 `onLivingUpdate()`
+- [x] 完成 Task 13（GT机器监控增强）：扩展 `MachineState` 支持13种故障类型（断电/需维护/输出满/结构不完整/污染堵塞/无法修复/缺涡轮/部件错误/发电机不足/资源耗尽/电力不足/电压不足），接入 `ShutDownReasonRegistry` 和 `CheckRecipeResult.getID()` 全量检测，翻译监控报告为中文
+- [x] 完成 Task 14（假人颜色分配）：基于名称hash为每个假人分配唯一颜色（`EnumChatFormatting`），聊天消息通过 `ChatStyle.setColor()` 着色，UI 通过 `§x` 格式代码显示
+- [x] 完成 Task 15（监控UI滚动+10秒周期提醒）：监控页面改用 `ListWidget+VerticalScrollData` 可滚动列表，聊天栏每10秒重复提醒存在问题的机器
+- [x] 完成 Task 16（提醒频率可配置）：UI监控页面新增4个频率按钮（10秒/30秒/1分钟/5分钟），默认30秒，支持持久化保存
+- [x] 完成 Task 17（聊天栏换行修复）：概览和问题提醒改为逐行发送，每台机器独占一条聊天消息
+- [x] 修复集成服中 fake player 触发 `ae2fc` `PlayerTickEvent` 空指针崩溃的问题，并在 GTstaff 侧补上只针对已知外部 NPE 的兼容测试
 - [x] 完成 Task UI-1~4：扩展 FakePlayerManagerService（executeAction / killBot / shadowBot / toggleMonitor / setMonitorRange / scanMachines / getInventorySummaryText）
 - [x] 完成 Task UI-5：重写 FakePlayerManagerUI 为 420x200 CustomNPC 风格分页布局（ListWidget + PagedWidget + Column）
 - [x] 完成 Task UI-6：端到端验证（test + assemble 通过）
@@ -42,5 +50,3 @@
 
 ## 搁置 / 拒绝
 - 暂无
-
-

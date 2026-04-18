@@ -10,11 +10,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-import com.mojang.authlib.GameProfile;
-
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+
+import com.mojang.authlib.GameProfile;
 
 class FakePlayerRegistryTest {
 
@@ -136,6 +136,7 @@ class FakePlayerRegistryTest {
     }
 
     private static final class StubFakePlayer extends FakePlayer {
+
         private String name;
         private UUID profileId;
         private boolean monitoring;

@@ -1,16 +1,18 @@
 package com.andgatech.gtstaff.fakeplayer;
 
+import net.minecraft.network.NetworkManager;
+import net.minecraft.network.Packet;
+import net.minecraft.util.IChatComponent;
+
+import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.util.concurrent.GenericFutureListener;
-import net.minecraft.network.Packet;
-import net.minecraft.network.NetworkManager;
-import net.minecraft.util.IChatComponent;
 
 public class FakeNetworkManager extends NetworkManager {
 
     public FakeNetworkManager() {
         super(false);
-        this.channel = new EmbeddedChannel();
+        this.channel = new EmbeddedChannel(new ChannelInboundHandlerAdapter());
     }
 
     @Override

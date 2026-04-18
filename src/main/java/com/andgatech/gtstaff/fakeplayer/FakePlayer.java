@@ -1,20 +1,22 @@
 package com.andgatech.gtstaff.fakeplayer;
 
-import com.google.common.base.Charsets;
-
 import java.util.UUID;
-
-import com.mojang.authlib.GameProfile;
 
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.EntityPlayerMP;
+import net.minecraft.network.play.server.S04PacketEntityEquipment;
+import net.minecraft.network.play.server.S0BPacketAnimation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.management.ItemInWorldManager;
 import net.minecraft.util.ChunkCoordinates;
 import net.minecraft.util.DamageSource;
+import net.minecraft.util.EnumChatFormatting;
 import net.minecraft.util.FoodStats;
 import net.minecraft.world.WorldServer;
 import net.minecraft.world.WorldSettings;
+
+import com.google.common.base.Charsets;
+import com.mojang.authlib.GameProfile;
 
 public class FakePlayer extends EntityPlayerMP {
 
@@ -34,9 +36,12 @@ public class FakePlayer extends EntityPlayerMP {
         this(server, world, new GameProfile(null, username));
     }
 
-    public static FakePlayer createFake(String username, MinecraftServer server, ChunkCoordinates pos, float yaw, float pitch, int dimension, WorldSettings.GameType gamemode, boolean flying) {
+    public static FakePlayer createFake(String username, MinecraftServer server, ChunkCoordinates pos, float yaw,
+        float pitch, int dimension, WorldSettings.GameType gamemode, boolean flying) {
         String safeUsername = username == null ? "" : username;
-        GameProfile profile = new GameProfile(EntityPlayer.func_146094_a(new GameProfile(null, safeUsername)), safeUsername);
+        GameProfile profile = new GameProfile(
+            EntityPlayer.func_146094_a(new GameProfile(null, safeUsername)),
+            safeUsername);
         ChunkCoordinates spawnPoint = pos;
         FakePlayer fakePlayer = createWithProfile(
             profile,
@@ -48,8 +53,7 @@ public class FakePlayer extends EntityPlayerMP {
             pitch,
             dimension,
             gamemode,
-            flying
-        );
+            flying);
         fakePlayer.replaceExistingRegistryEntry();
         FakePlayerRegistry.register(fakePlayer, null);
         fakePlayer.respawnFake();
@@ -78,11 +82,17 @@ public class FakePlayer extends EntityPlayerMP {
             player.rotationPitch,
             player.dimension,
             player.theItemInWorldManager.getGameType(),
-            player.capabilities.isFlying
-        );
+            player.capabilities.isFlying);
         shadow.clonePlayer(player, true);
         shadow.copyCapabilitiesFrom(player);
-        shadow.applyCreationState(player.posX, player.posY, player.posZ, player.rotationYaw, player.rotationPitch, player.capabilities.isFlying, player.theItemInWorldManager.getGameType());
+        shadow.applyCreationState(
+            player.posX,
+            player.posY,
+            player.posZ,
+            player.rotationYaw,
+            player.rotationPitch,
+            player.capabilities.isFlying,
+            player.theItemInWorldManager.getGameType());
         shadow.setOwnerUUID(player.getUniqueID());
         shadow.replaceExistingRegistryEntry();
         FakePlayerRegistry.register(shadow, player.getUniqueID());
@@ -110,8 +120,7 @@ public class FakePlayer extends EntityPlayerMP {
             data.getPitch(),
             data.getDimension(),
             WorldSettings.GameType.getByID(data.getGameTypeId()),
-            data.isFlying()
-        );
+            data.isFlying());
         fakePlayer.setOwnerUUID(data.getOwnerUUID());
         fakePlayer.setMonitoring(data.isMonitoring());
         fakePlayer.setMonitorRange(data.getMonitorRange());
@@ -146,7 +155,20 @@ public class FakePlayer extends EntityPlayerMP {
         }
 
         super.onUpdate();
+        // Tick action pack after EntityPlayerMP.onUpdate() resets moveForward/moveStrafing,
+        // but before onLivingUpdate() which consumes them for EntityLivingBase movement.
+        ((IFakePlayerHolder) this).getActionPack()
+            .onUpdate();
+        // EntityPlayerMP.onUpdate() does not advance the living movement path.
+        // Fake players have no client packets, so we manually run the living update,
+        // but avoid onUpdateEntity() because it would trigger EntityPlayer.onUpdate()
+        // and post a second PlayerTickEvent to external mods.
+        runLivingUpdate(this::onLivingUpdate);
         this.machineMonitorService.tick(this);
+    }
+
+    static void runLivingUpdate(Runnable livingUpdateAction) {
+        livingUpdateAction.run();
     }
 
     @Override
@@ -170,7 +192,8 @@ public class FakePlayer extends EntityPlayerMP {
         this.machineMonitorService.clear();
 
         if (this.mcServer != null) {
-            this.mcServer.getConfigurationManager().playerLoggedOut(this);
+            this.mcServer.getConfigurationManager()
+                .playerLoggedOut(this);
         }
 
         super.kill();
@@ -200,12 +223,43 @@ public class FakePlayer extends EntityPlayerMP {
         this.machineMonitorService.setMonitorRange(monitorRange);
     }
 
+    public int getReminderInterval() {
+        return this.machineMonitorService == null ? 600 : this.machineMonitorService.getReminderInterval();
+    }
+
+    public void setReminderInterval(int reminderInterval) {
+        if (this.machineMonitorService != null) {
+            this.machineMonitorService.setReminderInterval(reminderInterval);
+        }
+    }
+
     public MachineMonitorService getMachineMonitorService() {
         return this.machineMonitorService;
     }
 
+    private static final EnumChatFormatting[] BOT_COLORS = { EnumChatFormatting.GREEN, EnumChatFormatting.AQUA,
+        EnumChatFormatting.LIGHT_PURPLE, EnumChatFormatting.GOLD, EnumChatFormatting.YELLOW, EnumChatFormatting.BLUE,
+        EnumChatFormatting.RED, EnumChatFormatting.DARK_AQUA, EnumChatFormatting.DARK_GREEN,
+        EnumChatFormatting.DARK_PURPLE, };
+
+    public EnumChatFormatting getChatColor() {
+        return getChatColorForName(this.getCommandSenderName());
+    }
+
+    public static EnumChatFormatting getChatColorForName(String name) {
+        int index = Math.abs((name == null ? "" : name).hashCode()) % BOT_COLORS.length;
+        return BOT_COLORS[index];
+    }
+
+    public static String colorizeName(String name) {
+        EnumChatFormatting color = getChatColorForName(name);
+        return (color != null ? color.toString() : "") + name;
+    }
+
     private void configureGameType(WorldSettings.GameType gamemode, WorldServer world) {
-        WorldSettings.GameType resolvedGameType = gamemode != null ? gamemode : world.getWorldInfo().getGameType();
+        WorldSettings.GameType resolvedGameType = gamemode != null ? gamemode
+            : world.getWorldInfo()
+                .getGameType();
         this.theItemInWorldManager.setGameType(resolvedGameType);
     }
 
@@ -224,7 +278,8 @@ public class FakePlayer extends EntityPlayerMP {
 
         FakeNetworkManager networkManager = new FakeNetworkManager();
         FakeNetHandlerPlayServer netHandler = new FakeNetHandlerPlayServer(server, networkManager, this);
-        server.getConfigurationManager().initializeConnectionToPlayer(networkManager, this, netHandler);
+        server.getConfigurationManager()
+            .initializeConnectionToPlayer(networkManager, this, netHandler);
     }
 
     private static void disconnectSourcePlayer(EntityPlayerMP player) {
@@ -237,11 +292,13 @@ public class FakePlayer extends EntityPlayerMP {
         }
 
         if (player.mcServer != null) {
-            player.mcServer.getConfigurationManager().playerLoggedOut(player);
+            player.mcServer.getConfigurationManager()
+                .playerLoggedOut(player);
         }
     }
 
-    private void applyCreationState(double x, double y, double z, float yaw, float pitch, boolean flying, WorldSettings.GameType gameType) {
+    private void applyCreationState(double x, double y, double z, float yaw, float pitch, boolean flying,
+        WorldSettings.GameType gameType) {
         this.setLocationAndAngles(x, y, z, yaw, pitch);
 
         this.capabilities.isFlying = flying;
@@ -253,7 +310,8 @@ public class FakePlayer extends EntityPlayerMP {
         this.sendPlayerAbilities();
 
         if (this.playerNetServerHandler != null) {
-            this.playerNetServerHandler.setPlayerLocation(this.posX, this.posY, this.posZ, this.rotationYaw, this.rotationPitch);
+            this.playerNetServerHandler
+                .setPlayerLocation(this.posX, this.posY, this.posZ, this.rotationYaw, this.rotationPitch);
         }
     }
 
@@ -264,15 +322,17 @@ public class FakePlayer extends EntityPlayerMP {
         }
     }
 
-    private static FakePlayer createWithProfile(GameProfile profile, MinecraftServer server, double x, double y, double z,
-        float yaw, float pitch, int dimension, WorldSettings.GameType gamemode, boolean flying) {
+    private static FakePlayer createWithProfile(GameProfile profile, MinecraftServer server, double x, double y,
+        double z, float yaw, float pitch, int dimension, WorldSettings.GameType gamemode, boolean flying) {
         WorldServer world = resolveWorld(server, dimension);
         if (world == null) {
             throw new IllegalStateException("Unable to resolve a world for fake player creation");
         }
 
         FakePlayer fakePlayer = new FakePlayer(server, world, profile);
-        WorldSettings.GameType resolvedGameType = gamemode != null ? gamemode : world.getWorldInfo().getGameType();
+        WorldSettings.GameType resolvedGameType = gamemode != null ? gamemode
+            : world.getWorldInfo()
+                .getGameType();
         ChunkCoordinates spawnPoint = world.provider.getRandomizedSpawnPoint();
         double spawnX = Double.isNaN(x) ? spawnPoint.posX + 0.5D : x;
         double spawnY = Double.isNaN(y) ? spawnPoint.posY : y;
@@ -300,4 +360,37 @@ public class FakePlayer extends EntityPlayerMP {
         return world;
     }
 
+    /**
+     * Sends equipment (held item + armor) packets to all nearby real players.
+     */
+    public void syncEquipmentToWatchers() {
+        if (this.worldObj == null || this.worldObj.isRemote) return;
+        WorldServer world = (WorldServer) this.worldObj;
+        int entityId = this.getEntityId();
+        for (Object watcherObj : world.playerEntities) {
+            EntityPlayerMP watcher = (EntityPlayerMP) watcherObj;
+            if (watcher == this) continue;
+            watcher.playerNetServerHandler
+                .sendPacket(new S04PacketEntityEquipment(entityId, 0, this.inventory.getCurrentItem()));
+            for (int i = 0; i < 4; i++) {
+                watcher.playerNetServerHandler
+                    .sendPacket(new S04PacketEntityEquipment(entityId, i + 1, this.inventory.armorInventory[i]));
+            }
+        }
+    }
+
+    /**
+     * Sends arm-swing animation packet to all nearby real players.
+     */
+    public void broadcastSwingAnimation() {
+        if (this.worldObj == null || this.worldObj.isRemote) return;
+        WorldServer world = (WorldServer) this.worldObj;
+        S0BPacketAnimation packet = new S0BPacketAnimation(this, 0);
+        for (Object watcherObj : world.playerEntities) {
+            EntityPlayerMP watcher = (EntityPlayerMP) watcherObj;
+            if (watcher != this) {
+                watcher.playerNetServerHandler.sendPacket(packet);
+            }
+        }
+    }
 }

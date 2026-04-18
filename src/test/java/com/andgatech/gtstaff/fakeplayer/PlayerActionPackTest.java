@@ -6,17 +6,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
 
-import org.junit.jupiter.api.Test;
-
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.item.EntityItem;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.entity.player.InventoryPlayer;
 import net.minecraft.inventory.Container;
-import net.minecraft.item.ItemStack;
 import net.minecraft.server.management.ItemInWorldManager;
 import net.minecraft.util.MovingObjectPosition;
+
+import org.junit.jupiter.api.Test;
 
 class PlayerActionPackTest {
 
@@ -136,6 +135,7 @@ class PlayerActionPackTest {
     }
 
     private static class TestablePack extends PlayerActionPack {
+
         private boolean useResult;
         private boolean attackResult;
         private int useCalls;
@@ -164,6 +164,7 @@ class PlayerActionPackTest {
     }
 
     private static class StubPlayer extends EntityPlayerMP {
+
         private boolean sneakingState;
         private boolean sprintingState;
         private boolean jumpingState;
@@ -206,6 +207,7 @@ class PlayerActionPackTest {
     }
 
     private static final class StubContainer extends Container {
+
         @Override
         public boolean canInteractWith(EntityPlayer player) {
             return true;
@@ -213,6 +215,7 @@ class PlayerActionPackTest {
     }
 
     private static final class StubItemInWorldManager extends ItemInWorldManager {
+
         private StubItemInWorldManager() {
             super(null);
         }

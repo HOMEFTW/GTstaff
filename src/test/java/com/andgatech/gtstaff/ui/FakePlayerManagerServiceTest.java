@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Test;
 import com.andgatech.gtstaff.config.Config;
 import com.andgatech.gtstaff.fakeplayer.FakePlayer;
 import com.andgatech.gtstaff.fakeplayer.FakePlayerRegistry;
+import com.andgatech.gtstaff.fakeplayer.MachineMonitorService;
 
 class FakePlayerManagerServiceTest {
 
@@ -425,7 +426,8 @@ class FakePlayerManagerServiceTest {
 
         String summary = service.scanMachines("UiBot");
 
-        assertTrue(summary.startsWith("Bot: UiBot"));
+        assertTrue(summary.contains("监控: 关"));
+        assertTrue(summary.contains("未发现GT多方块机器"));
     }
 
     @Test
@@ -434,7 +436,7 @@ class FakePlayerManagerServiceTest {
 
         String summary = service.scanMachines("MissingBot");
 
-        assertEquals("Bot MissingBot is not online.", summary);
+        assertEquals("假人 MissingBot 不在线。", summary);
     }
 
     @Test
@@ -458,7 +460,7 @@ class FakePlayerManagerServiceTest {
 
         String summary = service.getInventorySummaryText("MissingBot");
 
-        assertEquals("Bot MissingBot is not online.", summary);
+        assertEquals("假人 MissingBot 不在线。", summary);
     }
 
     private static final class RecordingRunner implements FakePlayerManagerService.CommandRunner {
@@ -477,6 +479,7 @@ class FakePlayerManagerServiceTest {
         private boolean monitoring;
         private int monitorRange = 16;
         private int entityId = 99;
+        private MachineMonitorService machineMonitorService;
 
         private StubFakePlayer() {
             super(null, null, "stub");
@@ -510,6 +513,14 @@ class FakePlayerManagerServiceTest {
         @Override
         public int getEntityId() {
             return this.entityId;
+        }
+
+        @Override
+        public MachineMonitorService getMachineMonitorService() {
+            if (this.machineMonitorService == null) {
+                this.machineMonitorService = new MachineMonitorService();
+            }
+            return this.machineMonitorService;
         }
     }
 

@@ -1,8 +1,8 @@
 package com.andgatech.gtstaff.fakeplayer;
 
 import net.minecraft.entity.player.EntityPlayerMP;
-import net.minecraft.network.NetworkManager;
 import net.minecraft.network.NetHandlerPlayServer;
+import net.minecraft.network.NetworkManager;
 import net.minecraft.server.MinecraftServer;
 
 public class FakeNetHandlerPlayServer extends NetHandlerPlayServer {

@@ -38,7 +38,7 @@ public class CommandPlayer extends CommandBase {
 
     @Override
     public String getCommandUsage(ICommandSender sender) {
-        return "/player <name> spawn|kill|shadow|attack|use|jump|drop|dropStack|move|look|turn|sneak|unsneak|sprint|unsprint|mount|dismount|hotbar|stop|monitor ...";
+        return "/player <name> spawn|kill|shadow|attack [once|continuous|interval <ticks>]|stopattack|use [once|continuous|interval <ticks>]|stopuse|jump|drop|dropStack|move|look|turn|sneak|unsneak|sprint|unsprint|mount|dismount|hotbar|stop|monitor ...";
     }
 
     @Override
@@ -119,8 +119,7 @@ public class CommandPlayer extends CommandBase {
                     options.position = new ChunkCoordinates(
                         parseInt(sender, args[++index]),
                         parseInt(sender, args[++index]),
-                        parseInt(sender, args[++index])
-                    );
+                        parseInt(sender, args[++index]));
                     break;
                 case "facing":
                     ensureRemaining(args, index, 2, sender);
@@ -145,7 +144,8 @@ public class CommandPlayer extends CommandBase {
             options.position = world.getSpawnPoint();
         }
         if (options.gameType == null) {
-            options.gameType = world.getWorldInfo().getGameType();
+            options.gameType = world.getWorldInfo()
+                .getGameType();
         }
 
         FakePlayer fakePlayer = FakePlayer.createFake(
@@ -156,8 +156,7 @@ public class CommandPlayer extends CommandBase {
             options.pitch,
             options.dimension,
             options.gameType,
-            options.flying
-        );
+            options.flying);
 
         if (sender instanceof EntityPlayerMP player) {
             FakePlayerRegistry.register(fakePlayer, player.getUniqueID());
@@ -165,8 +164,7 @@ public class CommandPlayer extends CommandBase {
 
         notifySender(
             sender,
-            "Spawned fake player " + fakePlayer.getCommandSenderName() + " at " + formatPosition(fakePlayer)
-        );
+            "Spawned fake player " + fakePlayer.getCommandSenderName() + " at " + formatPosition(fakePlayer));
     }
 
     protected void handleKill(ICommandSender sender, String botName) {
@@ -219,9 +217,11 @@ public class CommandPlayer extends CommandBase {
         if (args.length == 0) {
             notifySender(
                 sender,
-                "Monitor for " + target.getCommandSenderName() + ": " + (target.isMonitoring() ? "on" : "off")
-                    + ", range=" + target.getMonitorRange()
-            );
+                "Monitor for " + target.getCommandSenderName()
+                    + ": "
+                    + (target.isMonitoring() ? "on" : "off")
+                    + ", range="
+                    + target.getMonitorRange());
             return;
         }
 
@@ -254,9 +254,11 @@ public class CommandPlayer extends CommandBase {
 
         notifySender(
             sender,
-            "Monitor for " + target.getCommandSenderName() + ": " + (target.isMonitoring() ? "on" : "off")
-                + ", range=" + target.getMonitorRange()
-        );
+            "Monitor for " + target.getCommandSenderName()
+                + ": "
+                + (target.isMonitoring() ? "on" : "off")
+                + ", range="
+                + target.getMonitorRange());
     }
 
     protected void handleManipulation(ICommandSender sender, String botName, String action, String[] args) {
@@ -274,6 +276,14 @@ public class CommandPlayer extends CommandBase {
             case "use":
                 actionPack.start(ActionType.USE, parseAction(sender, args));
                 notifySender(sender, "Set use action for " + target.getCommandSenderName());
+                return;
+            case "stopattack":
+                actionPack.stop(ActionType.ATTACK);
+                notifySender(sender, "Stopped attack for " + target.getCommandSenderName());
+                return;
+            case "stopuse":
+                actionPack.stop(ActionType.USE);
+                notifySender(sender, "Stopped use for " + target.getCommandSenderName());
                 return;
             case "jump":
                 actionPack.start(ActionType.JUMP, parseAction(sender, args));
@@ -436,7 +446,8 @@ public class CommandPlayer extends CommandBase {
         }
 
         @SuppressWarnings("unchecked")
-        List<Entity> nearbyEntities = target.worldObj.getEntitiesWithinAABBExcludingEntity(target, target.boundingBox.expand(3.0D, 1.0D, 3.0D));
+        List<Entity> nearbyEntities = target.worldObj
+            .getEntitiesWithinAABBExcludingEntity(target, target.boundingBox.expand(3.0D, 1.0D, 3.0D));
         for (Entity entity : nearbyEntities) {
             if (entity == null || entity == target) {
                 continue;
@@ -452,7 +463,8 @@ public class CommandPlayer extends CommandBase {
         throw new CommandException("No nearby entity to mount");
     }
 
-    private void lookAt(ICommandSender sender, FakePlayer target, PlayerActionPack actionPack, String xArg, String yArg, String zArg) {
+    private void lookAt(ICommandSender sender, FakePlayer target, PlayerActionPack actionPack, String xArg, String yArg,
+        String zArg) {
         double x = parseDouble(sender, xArg);
         double y = parseDouble(sender, yArg);
         double z = parseDouble(sender, zArg);
@@ -538,19 +550,28 @@ public class CommandPlayer extends CommandBase {
         if (player.canCommandSenderUseCommand(Config.fakePlayerPermissionLevel, "gtstaff")) {
             return true;
         }
-        return player.getUniqueID().equals(target.getUniqueID());
+        return player.getUniqueID()
+            .equals(target.getUniqueID());
     }
 
     private void notifySender(ICommandSender sender, String message) {
-        sender.addChatMessage(new ChatComponentText("[GTstaff] " + message));
+        if (sender != null) {
+            sender.addChatMessage(new ChatComponentText("[GTstaff] " + message));
+        }
     }
 
     private String formatPosition(FakePlayer fakePlayer) {
-        return "(" + MathHelper.floor_double(fakePlayer.posX) + ", " + MathHelper.floor_double(fakePlayer.posY) + ", "
-            + MathHelper.floor_double(fakePlayer.posZ) + ") dim=" + fakePlayer.dimension;
+        return "(" + MathHelper.floor_double(fakePlayer.posX)
+            + ", "
+            + MathHelper.floor_double(fakePlayer.posY)
+            + ", "
+            + MathHelper.floor_double(fakePlayer.posZ)
+            + ") dim="
+            + fakePlayer.dimension;
     }
 
     private static final class SpawnOptions {
+
         private ChunkCoordinates position;
         private float yaw;
         private float pitch;
@@ -562,7 +583,8 @@ public class CommandPlayer extends CommandBase {
             SpawnOptions options = new SpawnOptions();
             options.position = sender.getPlayerCoordinates();
             options.dimension = sender instanceof EntityPlayerMP player ? player.dimension : 0;
-            options.gameType = sender instanceof EntityPlayerMP player ? player.theItemInWorldManager.getGameType() : null;
+            options.gameType = sender instanceof EntityPlayerMP player ? player.theItemInWorldManager.getGameType()
+                : null;
             options.flying = sender instanceof EntityPlayerMP player && player.capabilities.isFlying;
             if (sender instanceof EntityPlayerMP player) {
                 options.yaw = player.rotationYaw;
@@ -578,7 +600,8 @@ public class CommandPlayer extends CommandBase {
                 if (world != null) {
                     options.position = world.getSpawnPoint();
                     if (options.gameType == null) {
-                        options.gameType = world.getWorldInfo().getGameType();
+                        options.gameType = world.getWorldInfo()
+                            .getGameType();
                     }
                 }
             }

@@ -179,10 +179,11 @@ public class FakePlayerManagerService {
         public final int selectedHotbarSlot;
         public final boolean monitoring;
         public final int monitorRange;
+        public final int reminderInterval;
         public final boolean online;
 
         private BotDetails(String botName, String ownerLabel, int blockX, int blockY, int blockZ, int dimension,
-            int selectedHotbarSlot, boolean monitoring, int monitorRange, boolean online) {
+            int selectedHotbarSlot, boolean monitoring, int monitorRange, int reminderInterval, boolean online) {
             this.botName = botName;
             this.ownerLabel = ownerLabel;
             this.blockX = blockX;
@@ -192,6 +193,7 @@ public class FakePlayerManagerService {
             this.selectedHotbarSlot = selectedHotbarSlot;
             this.monitoring = monitoring;
             this.monitorRange = monitorRange;
+            this.reminderInterval = reminderInterval;
             this.online = online;
         }
     }
@@ -261,11 +263,17 @@ public class FakePlayerManagerService {
 
     public String executeAction(ICommandSender sender, String botName, String action) {
         String normalizedBotName = requireBotName(botName);
-        String normalizedAction = action == null ? "" : action.trim().toLowerCase(Locale.ROOT);
+        String normalizedAction = action == null ? ""
+            : action.trim()
+                .toLowerCase(Locale.ROOT);
         if (normalizedAction.isEmpty()) {
             throw new CommandException("Action cannot be empty");
         }
-        this.commandRunner.run(sender, new String[] { normalizedBotName, normalizedAction });
+        String[] actionParts = normalizedAction.split("\\s+");
+        String[] args = new String[1 + actionParts.length];
+        args[0] = normalizedBotName;
+        System.arraycopy(actionParts, 0, args, 1, actionParts.length);
+        this.commandRunner.run(sender, args);
         return "Executed " + normalizedAction + " on " + normalizedBotName + ".";
     }
 
@@ -294,24 +302,40 @@ public class FakePlayerManagerService {
         return "Monitor range set to " + range + " for " + normalizedBotName + ".";
     }
 
+    public String setReminderInterval(ICommandSender sender, String botName, int intervalTicks) {
+        String normalizedBotName = requireBotName(botName);
+        FakePlayer fakePlayer = findBot(normalizedBotName);
+        if (fakePlayer == null) {
+            throw new CommandException(buildOfflineBotMessage(normalizedBotName));
+        }
+        fakePlayer.setReminderInterval(intervalTicks);
+        int seconds = intervalTicks / 20;
+        return "提醒频率已设置为 " + seconds + " 秒 for " + normalizedBotName + ".";
+    }
+
     public String scanMachines(String botName) {
         FakePlayer fakePlayer = findBot(botName);
         if (fakePlayer == null) {
-            return "Bot " + (botName == null ? "" : botName.trim()) + " is not online.";
+            return "假人 " + (botName == null ? "" : botName.trim()) + " 不在线。";
         }
         BotDetails details = describeBot(botName);
         StringBuilder builder = new StringBuilder();
-        builder.append("Bot: ").append(details.botName).append('\n');
-        builder.append("Monitoring: ").append(details.monitoring ? "ON" : "OFF").append('\n');
-        builder.append("Range: ").append(details.monitorRange).append('\n');
-        builder.append("Machine scanning requires in-game tick to refresh.");
-        return builder.toString().trim();
+        builder.append("监控: ")
+            .append(details.monitoring ? "开" : "关");
+        builder.append("  范围: ")
+            .append(details.monitorRange)
+            .append('\n');
+        builder.append(
+            fakePlayer.getMachineMonitorService()
+                .buildOverviewMessage(botName));
+        return builder.toString()
+            .trim();
     }
 
     public String getInventorySummaryText(String botName) {
         FakePlayer fakePlayer = findBot(botName);
         if (fakePlayer == null) {
-            return "Bot " + (botName == null ? "" : botName.trim()) + " is not online.";
+            return "假人 " + (botName == null ? "" : botName.trim()) + " 不在线。";
         }
         InventoryDraft draft = new InventoryDraft();
         draft.botName = botName;
@@ -336,7 +360,18 @@ public class FakePlayerManagerService {
     public BotDetails describeBot(String botName) {
         FakePlayer fakePlayer = findBot(botName);
         if (fakePlayer == null) {
-            return new BotDetails(botName == null ? "" : botName.trim(), "(offline)", 0, 0, 0, 0, 0, false, 0, false);
+            return new BotDetails(
+                botName == null ? "" : botName.trim(),
+                "(offline)",
+                0,
+                0,
+                0,
+                0,
+                0,
+                false,
+                0,
+                600,
+                false);
         }
         return new BotDetails(
             fakePlayer.getCommandSenderName(),
@@ -348,6 +383,7 @@ public class FakePlayerManagerService {
             fakePlayer.inventory == null ? 0 : MathHelper.clamp_int(fakePlayer.inventory.currentItem, 0, 8),
             fakePlayer.isMonitoring(),
             fakePlayer.getMonitorRange(),
+            fakePlayer.getReminderInterval(),
             true);
     }
 

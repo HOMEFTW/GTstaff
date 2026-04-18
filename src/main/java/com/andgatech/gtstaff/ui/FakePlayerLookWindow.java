@@ -19,7 +19,7 @@ public class FakePlayerLookWindow extends ModularPanel {
     private final FakePlayerManagerService service;
     private final EntityPlayerMP player;
     private final FakePlayerManagerService.LookDraft draft;
-    private String statusMessage = "Choose a direction or look at a target position.";
+    private String statusMessage = "Choose a direction or target.";
 
     public FakePlayerLookWindow(ModularPanel parent, EntityPlayerMP player, PanelSyncManager syncManager) {
         this(parent, player, syncManager, new FakePlayerManagerService());
@@ -32,29 +32,64 @@ public class FakePlayerLookWindow extends ModularPanel {
         this.service = service;
         this.draft = service.createLookDraft(player);
 
-        syncManager.syncValue("gtstaffLookStatus", new StringSyncValue(() -> this.statusMessage, val -> this.statusMessage = val));
+        syncManager.syncValue(
+            "gtstaffLookStatus",
+            new StringSyncValue(() -> this.statusMessage, val -> this.statusMessage = val));
 
-        relative(parent).leftRel(1).topRel(0).size(214, 148).widgetTheme("backgroundPopup")
+        PopupPanelLayout.centerInParent(this, parent, 214, 148)
+            .widgetTheme("backgroundPopup")
             .child(ButtonWidget.panelCloseButton())
-            .child(new TextWidget("Look Control").top(10).left(10))
-            .child(new TextWidget("Bot").top(30).left(10))
-            .child(createBotNameField().top(28).left(42))
-            .child(createPresetButton("North", "north").top(54).left(10))
-            .child(createPresetButton("South", "south").top(54).left(78))
-            .child(createPresetButton("East", "east").top(54).left(146))
-            .child(createPresetButton("West", "west").top(76).left(10))
-            .child(createPresetButton("Up", "up").top(76).left(78))
-            .child(createPresetButton("Down", "down").top(76).left(146))
-            .child(new TextWidget("At").top(104).left(10))
-            .child(createCoordinateField(() -> this.draft.x, val -> this.draft.x = val).top(102).left(28))
-            .child(createCoordinateField(() -> this.draft.y, val -> this.draft.y = val).top(102).left(82))
-            .child(createCoordinateField(() -> this.draft.z, val -> this.draft.z = val).top(102).left(136))
-            .child(createLookAtButton().top(124).left(10))
-            .child(new TextWidget(IKey.dynamic(() -> this.statusMessage)).top(124).left(78).size(124, 18));
+            .child(
+                new TextWidget("Look Control").top(10)
+                    .left(10))
+            .child(
+                new TextWidget("Bot").top(30)
+                    .left(10))
+            .child(
+                createBotNameField().top(28)
+                    .left(42))
+            .child(
+                createPresetButton("North", "north").top(54)
+                    .left(10))
+            .child(
+                createPresetButton("South", "south").top(54)
+                    .left(78))
+            .child(
+                createPresetButton("East", "east").top(54)
+                    .left(146))
+            .child(
+                createPresetButton("West", "west").top(76)
+                    .left(10))
+            .child(
+                createPresetButton("Up", "up").top(76)
+                    .left(78))
+            .child(
+                createPresetButton("Down", "down").top(76)
+                    .left(146))
+            .child(
+                new TextWidget("At").top(104)
+                    .left(10))
+            .child(
+                createCoordinateField(() -> this.draft.x, val -> this.draft.x = val).top(102)
+                    .left(28))
+            .child(
+                createCoordinateField(() -> this.draft.y, val -> this.draft.y = val).top(102)
+                    .left(82))
+            .child(
+                createCoordinateField(() -> this.draft.z, val -> this.draft.z = val).top(102)
+                    .left(136))
+            .child(
+                createLookAtButton().top(124)
+                    .left(10))
+            .child(
+                new TextWidget(IKey.dynamic(() -> this.statusMessage)).top(124)
+                    .left(78)
+                    .size(126, 18));
     }
 
     private TextFieldWidget createBotNameField() {
-        return new TextFieldWidget().value(new StringSyncValue(() -> this.draft.botName, val -> this.draft.botName = val))
+        return new TextFieldWidget()
+            .value(new StringSyncValue(() -> this.draft.botName, val -> this.draft.botName = val))
             .setMaxLength(16)
             .size(150, 16);
     }
@@ -117,11 +152,13 @@ public class FakePlayerLookWindow extends ModularPanel {
 
     @FunctionalInterface
     private interface IntGetter {
+
         int get();
     }
 
     @FunctionalInterface
     private interface IntSetter {
+
         void set(int value);
     }
 }

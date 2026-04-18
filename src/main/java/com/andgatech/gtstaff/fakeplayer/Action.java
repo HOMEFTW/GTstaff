@@ -33,7 +33,7 @@ public class Action {
         if (done) return false;
         tickCount++;
         if (tickCount <= offset) return false;
-        if ((tickCount - offset) % interval != 0) return false;
+        if ((tickCount - offset - 1) % interval != 0) return false;
         if (limit > 0) {
             limit--;
             if (limit <= 0) done = true;

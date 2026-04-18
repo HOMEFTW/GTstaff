@@ -27,14 +27,15 @@ class ActionTest {
     }
 
     @Test
-    void intervalThreeOnlyFiresOnTheThirdTickAndRepeatsEveryThirdTick() {
+    void intervalThreeFiresImmediatelyAndRepeatsEveryThreeTicks() {
         Action action = Action.interval(3);
 
+        assertTrue(action.tick());
         assertFalse(action.tick());
         assertFalse(action.tick());
         assertTrue(action.tick());
-        assertFalse(action.tick());
         assertFalse(action.done);
+        assertFalse(action.tick());
         assertFalse(action.tick());
         assertTrue(action.tick());
         assertFalse(action.done);
