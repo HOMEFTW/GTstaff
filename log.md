@@ -1,5 +1,115 @@
 # 开发日志
 
+## 2026-04-18：重构 FakePlayerManagerUI 为 CustomNPC 风格分页布局
+
+### 已完成
+- 重写 `FakePlayerManagerUI` 从 320x220 基础布局到 420x200 CustomNPC 风格分页管理界面
+- 左侧 `ListWidget` 可滚动 bot 列表（替代旧版硬编码 8 个按钮），支持无限 bot 数量
+- 右侧 `PagedWidget` 四页签：Overview / Inventory / Actions / Monitor
+- Overview 页签：显示 bot 详情（Owner、坐标、维度、游戏模式、监控状态）+ Kill / Shadow 按钮
+- Inventory 页签：显示库存摘要 + "Manage Inventory" 打开原版背包容器 + "Refresh" 刷新
+- Actions 页签：5 个快捷操作按钮（Attack/Use/Jump/Drop/Stop）+ 9 个 Hotbar 槽位按钮 + Sneak/Sprint + Look 弹窗
+- Monitor 页签：Toggle Monitor 开关 + Scan 机器状态 + 动态显示监控摘要
+- 扩展 `FakePlayerManagerService` 新增 7 个方法：`executeAction`、`killBot`、`shadowBot`、`toggleMonitor`、`setMonitorRange`、`scanMachines`、`getInventorySummaryText`
+- 新增 12 个服务方法测试，全部通过
+- 通过 `./gradlew.bat --offline test` + `./gradlew.bat --offline assemble` 端到端验证
+
+### 做出的决定
+- `scanMachines` 使用 `describeBot` 回退方案（不依赖 `getMonitorService()`），因为 `FakePlayer` 当前未暴露该方法
+- Task 1-4 合并为一次提交（服务方法变更），Task 5 单独提交（UI 重写）
+- `ListWidget` 使用 `@SuppressWarnings("rawtypes")` 解决泛型类型推断问题
+
+---
+
+## 2026-04-18：重构 fake player 管理台并接入原版背包容器
+
+### 已完成
+- 新增 `docs/superpowers/specs/2026-04-18-gtstaff-ui-inventory-redesign.md` 与 `docs/superpowers/plans/2026-04-18-gtstaff-ui-inventory-redesign.md`，把这次 UI 重构拆成 `MUI2 管理台` 与 `原版 chest-style 背包容器` 两条实现线
+- 新增 `FakePlayerInventoryView`，将 fake player 库存映射为固定 40 槽布局：`0-3` 护甲、`4-12` hotbar、`13-39` 主背包
+- 新增 `FakePlayerArmorSlot` 与 `FakePlayerInventoryContainer`，支持护甲槽规则、玩家与 fake player 背包互传、点击 fake hotbar 槽同步 `currentItem`
+- 新增 `FakePlayerInventoryGuiHandler`、`FakePlayerInventoryGui` 与 `FakePlayerInventoryGuiIds`，打通 `MUI2 -> openGui -> Container/GuiContainer` 链路
+- 重构 `FakePlayerManagerService`，新增 bot 列表、默认选中 bot、bot 摘要与 `openInventoryManager(...)` 服务入口
+- 重写 `FakePlayerManagerUI`，改为左侧 bot 列表 + 右侧 `Overview / Inventory / Actions / Monitor` 页签；`Inventory` 页签现在打开原版容器，而不是旧的只读文本窗口
+- `CommonProxy.init(...)` 现在会注册 `FakePlayerInventoryGuiHandler`
+- 新增 `FakePlayerInventoryViewTest` 与 `FakePlayerInventoryContainerTest`，并扩展 `FakePlayerManagerServiceTest` 覆盖 bot 列表、详情与权限打开逻辑
+- 通过 `./gradlew.bat --offline --no-daemon test --tests com.andgatech.gtstaff.ui.FakePlayerInventoryViewTest --tests com.andgatech.gtstaff.ui.FakePlayerInventoryContainerTest --tests com.andgatech.gtstaff.ui.FakePlayerManagerServiceTest`
+- 通过 `./gradlew.bat --offline --no-daemon assemble`，产出新的客户端测试 jar
+
+### 遇到的问题
+- **Gradle 沙箱默认用户目录不可写**：先定位到 `GRADLE_USER_HOME` 与 wrapper lock 文件问题，随后改为在真实本地 Gradle 缓存下执行离线验证
+- **fake player 主背包槽位映射首版写错**：`13-39` 到 `InventoryPlayer.mainInventory[9-35]` 的换算少减了一段偏移，导致视图与容器测试首次红灯；修正公式后恢复正常
+- **授权打开背包管理的测试桩不稳定**：成功用例改为以 OP 玩家打开，避免测试桩 owner 判断噪声影响 `openGui` 入口验证
+
+### 做出的决定
+- `MUI2` 只负责管理台与入口，不再承载真正的库存编辑
+- fake player 背包管理优先复用原版 `Container` 交互语义，支持拖拽、Shift 点击和玩家背包互传
+- 当前主手槽位用“点击 hotbar 槽 + 容器 progress bar 同步 + GUI 高亮”实现，而不是额外再做一套自定义网络包
+
+---
+
+## 2026-04-18：修复 MUI2 子窗口错位导致无法操作
+
+### 已完成
+- 根据 `2026-04-18_07.51.54.png`、`2026-04-18_07.51.58.png`、`2026-04-18_07.52.01.png` 确认三个子窗口都被定位到主面板右侧屏幕边缘，导致文字和输入控件大面积跑出可视区
+- 新增 `PopupPanelLayout`，统一将 GTstaff 的 MUI2 子窗口按“相对主面板居中”的方式布局，避免继续使用 `leftRel(1)` 这种右侧偏移定位
+- 将 `FakePlayerSpawnWindow`、`FakePlayerInventoryWindow`、`FakePlayerLookWindow` 切到新的 popup 布局 helper，并适度缩短初始状态文案，减少窄面板里的文本溢出
+- 新增 `PopupPanelLayoutTest`，覆盖“子窗口相对父面板布局而不是向右偏移”的回归场景
+- 通过 `./gradlew.bat test --tests com.andgatech.gtstaff.ui.PopupPanelLayoutTest --tests com.andgatech.gtstaff.ClientProxyTest --tests com.andgatech.gtstaff.ui.FakePlayerManagerServiceTest`
+- 重新执行 `./gradlew.bat --offline assemble`，产出带布局修复的新测试 jar
+
+### 做出的决定
+- 子窗口先采用“相对主面板居中”而不是“屏幕右侧浮出”，这样改动最小，也最符合当时 manager UI 的使用习惯
+- 本轮只修定位和可操作性，不同时重做整体视觉布局，避免把简单稳定性问题扩大成 UI 重构
+
+---
+
+## 2026-04-18：修复 MUI2 UI factory 未注册导致的客户端闪退
+
+### 已完成
+- 根据客户端报错 `There was a critical exception handling a packet on channel modularui2` 中的 `GuiManager.getFactory(...) -> NoSuchElementException`，确认 `/gtstaff ui` 闪退根因是 `gtstaff:fake_player_manager` 没有在客户端注册到 `GuiManager`
+- 在 `ClientProxy.init(...)` 中补上 `FakePlayerManagerUI.INSTANCE` 的注册逻辑，并增加重复注册保护
+- 新增 `ClientProxyTest`，覆盖“缺失时注册”和“已存在时不重复注册”两个回归场景
+- 通过 `./gradlew.bat test --tests com.andgatech.gtstaff.ClientProxyTest --tests com.andgatech.gtstaff.ui.FakePlayerManagerServiceTest --tests com.andgatech.gtstaff.fakeplayer.FakePlayerRestoreSchedulerTest`
+- 重新执行 `./gradlew.bat --offline assemble`，产出带 MUI2 修复的新测试 jar
+
+### 做出的决定
+- MUI2 factory 注册放在 `ClientProxy`，而不是 `CommonProxy`，避免把 UI factory 的客户端依赖强行带到专用服初始化路径
+- 对 `GuiManager.registerFactory(...)` 先做存在性判断，避免重复初始化时触发 `Factory with name ... is already registered!`
+
+---
+
+## 2026-04-18：修复集成服启动期 fake player 自动恢复崩溃
+
+### 已完成
+- 阅读 `crash-2026-04-18_07.19.37-server.txt`，确认崩溃发生在 `Loader.serverStarted(...)` 阶段，且崩溃时 `Bot_Steve` 已经被自动恢复到玩家列表中
+- 新增 `FakePlayerRestoreScheduler`，把持久化 bot 恢复从 `CommonProxy.serverStarted(...)` 挪到 `ServerTickEvent` 调度链中执行
+- 为集成服增加“等到至少一名真实玩家在线后再恢复 bot”的保护，避免在单人世界尚未完成本地玩家接入时提前触发 fake player 登录链
+- 补充 `FakePlayerRestoreSchedulerTest`，覆盖“专用服下一 tick 恢复”和“集成服等待真实玩家后再恢复”两个回归场景
+- 跑通 `./gradlew.bat compileJava`、`./gradlew.bat compileTestJava`，以及 `ActionTest`、`FakePlayerRegistryTest`、`PermissionHelperTest`、`FakePlayerRestoreSchedulerTest`
+
+### 做出的决定
+- 自动恢复仍然保留，但不再直接耦合到 FML `serverStarted` 事件主体中执行
+- 集成服与专用服使用不同恢复时机：专用服允许下一 tick 恢复，集成服要求先有真实玩家上线
+
+---
+
+## 2026-04-18：调研 `CustomNPC-Plus-master` 对 `GTstaff` 的可借鉴点
+
+### 已完成
+- 阅读 `CustomNPC-Plus-master` 的命令、GUI、同步、持久化与路径相关源码，并与 `GTstaff` 当前 fake player / UI 实现对照
+- 确认较值得参考的方向：命令分层与子命令权限、可序列化 GUI 状态、分块同步、大对象 JSON/NBT 模板存储、路径巡逻/导航
+- 确认不建议直接照搬的部分：庞大的 `PacketHandler*` 分发链路、旧式 GUI/Container 基建，以及以 NPC 实体为中心的行为实现
+
+### 遇到的问题
+- **`CustomNPC-Plus-master` 体量很大**：先按命令、GUI、同步、持久化、路径五条主线缩小范围，避免陷入无关功能
+- **项目技术栈不同**：`GTstaff` 目前基于 fake player + ModularUI2，而 `CustomNPC` 主要围绕自定义 NPC、脚本 GUI 与自有网络协议
+
+### 做出的决定
+- 近期如果继续扩展 `GTstaff`，优先参考“结构设计”和“数据流模式”，而不是直接移植 `CustomNPC` 的具体实现
+- 如果后续要做 bot 选中态、多 bot 管理面板、巡逻/路线系统、模板化 bot 预设，可回头针对对应模块做二次调研
+
+---
+
 ## 2026-04-17：Task 8 - 用户提示与最终自动化 smoke test
 
 ### 已完成
