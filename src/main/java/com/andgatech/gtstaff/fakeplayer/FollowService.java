@@ -111,28 +111,37 @@ public class FollowService {
     }
 
     private void handleCrossDimension(EntityPlayerMP target) {
-        if (previousTargetDimension != Integer.MIN_VALUE && target.dimension != previousTargetDimension) {
+        int targetDim = target.dimension;
+
+        // If target moved to yet another dimension during countdown, reset
+        if (previousTargetDimension != Integer.MIN_VALUE && targetDim != previousTargetDimension) {
             crossDimTicksRemaining = CROSS_DIM_DELAY_TICKS;
             pendingCrossDimMessage = true;
         }
-        previousTargetDimension = target.dimension;
+        previousTargetDimension = targetDim;
 
-        if (crossDimTicksRemaining == 0 && !pendingCrossDimMessage) {
+        // Start countdown if not already running
+        if (crossDimTicksRemaining <= 0 && !pendingCrossDimMessage) {
             crossDimTicksRemaining = CROSS_DIM_DELAY_TICKS;
             pendingCrossDimMessage = true;
         }
 
+        // Send notification message (only once per countdown start or reset)
         if (pendingCrossDimMessage) {
             String botName = FakePlayer.colorizeName(fakePlayer.getCommandSenderName());
-            int seconds = crossDimTicksRemaining / 20;
+            int seconds = (crossDimTicksRemaining + 19) / 20; // ceil division
             target.addChatMessage(new ChatComponentText("[GTstaff] " + botName + " 将在 " + seconds + " 秒后传送至你的维度"));
             pendingCrossDimMessage = false;
         }
 
+        // Count down
         if (crossDimTicksRemaining > 0) {
             crossDimTicksRemaining--;
             if (crossDimTicksRemaining == 0) {
-                executeCrossDimensionTeleport(target);
+                // Check target is still in a different dimension before teleporting
+                if (fakePlayer.dimension != target.dimension) {
+                    executeCrossDimensionTeleport(target);
+                }
                 previousTargetDimension = Integer.MIN_VALUE;
             }
         }
@@ -146,13 +155,17 @@ public class FollowService {
         WorldServer newWorld = server.worldServerForDimension(targetDim);
         if (newWorld == null) return;
 
-        int oldDim = fakePlayer.dimension;
-
-        // Use vanilla transfer to handle world removal, dimension change, and world spawn
-        server.getConfigurationManager().transferPlayerToDimension(fakePlayer, targetDim);
+        try {
+            server.getConfigurationManager().transferPlayerToDimension(fakePlayer, targetDim);
+        } catch (Exception e) {
+            // If vanilla transfer fails, skip this attempt and retry next cycle
+            previousTargetDimension = Integer.MIN_VALUE;
+            return;
+        }
 
         // Verify dimension actually changed
         if (fakePlayer.dimension != targetDim) {
+            previousTargetDimension = Integer.MIN_VALUE;
             return;
         }
 
@@ -163,6 +176,13 @@ public class FollowService {
         if (fakePlayer.playerNetServerHandler != null) {
             fakePlayer.playerNetServerHandler.setPlayerLocation(target.posX, target.posY, target.posZ, fakePlayer.rotationYaw, fakePlayer.rotationPitch);
         }
+
+        // Sync flying state after dimension transfer
+        fakePlayer.capabilities.isFlying = target.capabilities.isFlying;
+        if (target.capabilities.isFlying) {
+            fakePlayer.capabilities.allowFlying = true;
+        }
+        fakePlayer.sendPlayerAbilities();
     }
 
     private void teleportNearTarget(EntityPlayerMP target) {
