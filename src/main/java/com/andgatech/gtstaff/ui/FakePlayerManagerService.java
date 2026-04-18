@@ -3,6 +3,7 @@ package com.andgatech.gtstaff.ui;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 import net.minecraft.command.CommandException;
@@ -13,18 +14,22 @@ import net.minecraft.entity.player.InventoryPlayer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.MathHelper;
 
+import com.andgatech.gtstaff.GTstaff;
 import com.andgatech.gtstaff.command.CommandPlayer;
 import com.andgatech.gtstaff.fakeplayer.FakePlayer;
 import com.andgatech.gtstaff.fakeplayer.FakePlayerRegistry;
+import com.andgatech.gtstaff.util.PermissionHelper;
 
 public class FakePlayerManagerService {
 
     @FunctionalInterface
     public interface CommandRunner {
+
         void run(ICommandSender sender, String[] args);
     }
 
     public static final class SpawnDraft {
+
         public String botName = "";
         public int x;
         public int y;
@@ -45,6 +50,7 @@ public class FakePlayerManagerService {
     }
 
     public static final class LookDraft {
+
         public String botName = "";
         public String mode = "north";
         public int x;
@@ -63,6 +69,7 @@ public class FakePlayerManagerService {
     }
 
     public static final class InventoryDraft {
+
         public String botName = "";
 
         public InventoryDraft copy() {
@@ -73,6 +80,7 @@ public class FakePlayerManagerService {
     }
 
     public static final class InventorySnapshot {
+
         public final String botName;
         public final int selectedHotbarSlot;
         public final List<String> hotbarLines;
@@ -90,21 +98,39 @@ public class FakePlayerManagerService {
 
         public String toDisplayText() {
             StringBuilder builder = new StringBuilder();
-            builder.append("Bot: ").append(this.botName).append('\n');
-            builder.append("Selected Hotbar Slot: ").append(this.selectedHotbarSlot + 1).append('\n');
-            builder.append("Hotbar:\n").append(joinLines(this.hotbarLines)).append('\n');
-            builder.append("Main Inventory:\n").append(joinLines(this.mainInventoryLines)).append('\n');
-            builder.append("Armor:\n").append(joinLines(this.armorLines));
+            builder.append("Bot: ")
+                .append(this.botName)
+                .append('\n');
+            builder.append("Selected Hotbar Slot: ")
+                .append(this.selectedHotbarSlot + 1)
+                .append('\n');
+            builder.append("Hotbar:\n")
+                .append(joinLines(this.hotbarLines))
+                .append('\n');
+            builder.append("Main Inventory:\n")
+                .append(joinLines(this.mainInventoryLines))
+                .append('\n');
+            builder.append("Armor:\n")
+                .append(joinLines(this.armorLines));
             return builder.toString();
         }
 
         public String toCompactDisplayText() {
             StringBuilder builder = new StringBuilder();
-            builder.append("Bot: ").append(this.botName).append('\n');
-            builder.append("Selected: ").append(this.selectedHotbarSlot + 1).append('\n');
-            builder.append("Hotbar\n").append(compactGrid(this.hotbarLines, 3)).append('\n');
-            builder.append("Main\n").append(compactGrid(this.mainInventoryLines, 3)).append('\n');
-            builder.append("Armor\n").append(compactGrid(this.armorLines, 2));
+            builder.append("Bot: ")
+                .append(this.botName)
+                .append('\n');
+            builder.append("Selected: ")
+                .append(this.selectedHotbarSlot + 1)
+                .append('\n');
+            builder.append("Hotbar\n")
+                .append(compactGrid(this.hotbarLines, 3))
+                .append('\n');
+            builder.append("Main\n")
+                .append(compactGrid(this.mainInventoryLines, 3))
+                .append('\n');
+            builder.append("Armor\n")
+                .append(compactGrid(this.armorLines, 2));
             return builder.toString();
         }
 
@@ -136,7 +162,37 @@ public class FakePlayerManagerService {
             if (line == null || line.isEmpty()) {
                 return "-";
             }
-            return line.replace("[ ] ", "").replace("[*] ", "*").replace(": (empty)", ":-");
+            return line.replace("[ ] ", "")
+                .replace("[*] ", "*")
+                .replace(": (empty)", ":-");
+        }
+    }
+
+    public static final class BotDetails {
+
+        public final String botName;
+        public final String ownerLabel;
+        public final int blockX;
+        public final int blockY;
+        public final int blockZ;
+        public final int dimension;
+        public final int selectedHotbarSlot;
+        public final boolean monitoring;
+        public final int monitorRange;
+        public final boolean online;
+
+        private BotDetails(String botName, String ownerLabel, int blockX, int blockY, int blockZ, int dimension,
+            int selectedHotbarSlot, boolean monitoring, int monitorRange, boolean online) {
+            this.botName = botName;
+            this.ownerLabel = ownerLabel;
+            this.blockX = blockX;
+            this.blockY = blockY;
+            this.blockZ = blockZ;
+            this.dimension = dimension;
+            this.selectedHotbarSlot = selectedHotbarSlot;
+            this.monitoring = monitoring;
+            this.monitorRange = monitorRange;
+            this.online = online;
         }
     }
 
@@ -203,6 +259,118 @@ public class FakePlayerManagerService {
         return "Updated look direction for " + botName + ".";
     }
 
+    public String executeAction(ICommandSender sender, String botName, String action) {
+        String normalizedBotName = requireBotName(botName);
+        String normalizedAction = action == null ? "" : action.trim().toLowerCase(Locale.ROOT);
+        if (normalizedAction.isEmpty()) {
+            throw new CommandException("Action cannot be empty");
+        }
+        this.commandRunner.run(sender, new String[] { normalizedBotName, normalizedAction });
+        return "Executed " + normalizedAction + " on " + normalizedBotName + ".";
+    }
+
+    public String killBot(ICommandSender sender, String botName) {
+        String normalizedBotName = requireBotName(botName);
+        this.commandRunner.run(sender, new String[] { normalizedBotName, "kill" });
+        return "Killed " + normalizedBotName + ".";
+    }
+
+    public String shadowBot(ICommandSender sender, String botName) {
+        String normalizedBotName = requireBotName(botName);
+        this.commandRunner.run(sender, new String[] { normalizedBotName, "shadow" });
+        return "Created shadow of " + normalizedBotName + ".";
+    }
+
+    public String toggleMonitor(ICommandSender sender, String botName, boolean enable) {
+        String normalizedBotName = requireBotName(botName);
+        String[] args = new String[] { normalizedBotName, "monitor", enable ? "on" : "off" };
+        this.commandRunner.run(sender, args);
+        return (enable ? "Monitor enabled" : "Monitor disabled") + " for " + normalizedBotName + ".";
+    }
+
+    public String setMonitorRange(ICommandSender sender, String botName, int range) {
+        String normalizedBotName = requireBotName(botName);
+        this.commandRunner.run(sender, new String[] { normalizedBotName, "monitor", "range", Integer.toString(range) });
+        return "Monitor range set to " + range + " for " + normalizedBotName + ".";
+    }
+
+    public String scanMachines(String botName) {
+        FakePlayer fakePlayer = findBot(botName);
+        if (fakePlayer == null) {
+            return "Bot " + (botName == null ? "" : botName.trim()) + " is not online.";
+        }
+        BotDetails details = describeBot(botName);
+        StringBuilder builder = new StringBuilder();
+        builder.append("Bot: ").append(details.botName).append('\n');
+        builder.append("Monitoring: ").append(details.monitoring ? "ON" : "OFF").append('\n');
+        builder.append("Range: ").append(details.monitorRange).append('\n');
+        builder.append("Machine scanning requires in-game tick to refresh.");
+        return builder.toString().trim();
+    }
+
+    public String getInventorySummaryText(String botName) {
+        FakePlayer fakePlayer = findBot(botName);
+        if (fakePlayer == null) {
+            return "Bot " + (botName == null ? "" : botName.trim()) + " is not online.";
+        }
+        InventoryDraft draft = new InventoryDraft();
+        draft.botName = botName;
+        return readInventory(draft).toCompactDisplayText();
+    }
+
+    public List<String> listBotNames() {
+        return FakePlayerRegistry.getAll()
+            .values()
+            .stream()
+            .map(FakePlayer::getCommandSenderName)
+            .sorted(String.CASE_INSENSITIVE_ORDER)
+            .collect(Collectors.toList());
+    }
+
+    public String defaultSelectedBotName() {
+        return listBotNames().stream()
+            .findFirst()
+            .orElse("");
+    }
+
+    public BotDetails describeBot(String botName) {
+        FakePlayer fakePlayer = findBot(botName);
+        if (fakePlayer == null) {
+            return new BotDetails(botName == null ? "" : botName.trim(), "(offline)", 0, 0, 0, 0, 0, false, 0, false);
+        }
+        return new BotDetails(
+            fakePlayer.getCommandSenderName(),
+            formatOwnerLabel(fakePlayer.getOwnerUUID()),
+            MathHelper.floor_double(fakePlayer.posX),
+            MathHelper.floor_double(fakePlayer.posY),
+            MathHelper.floor_double(fakePlayer.posZ),
+            fakePlayer.dimension,
+            fakePlayer.inventory == null ? 0 : MathHelper.clamp_int(fakePlayer.inventory.currentItem, 0, 8),
+            fakePlayer.isMonitoring(),
+            fakePlayer.getMonitorRange(),
+            true);
+    }
+
+    public String openInventoryManager(EntityPlayerMP player, String botName) {
+        if (player == null) {
+            throw new CommandException("Inventory manager can only be opened by a player");
+        }
+
+        FakePlayer fakePlayer = findBotOrThrow(botName);
+        if (PermissionHelper.cantManipulate(player, fakePlayer)) {
+            throw new CommandException("You do not have permission to manage " + fakePlayer.getCommandSenderName());
+        }
+
+        player.openGui(
+            GTstaff.instance,
+            FakePlayerInventoryGuiIds.FAKE_PLAYER_INVENTORY,
+            player.worldObj,
+            fakePlayer.getEntityId(),
+            0,
+            0);
+        return "Opening inventory manager for " + fakePlayer.getCommandSenderName() + ".";
+    }
+
     public InventoryDraft createInventoryDraft(EntityPlayer player) {
         InventoryDraft draft = new InventoryDraft();
         draft.botName = suggestBotName();
@@ -228,24 +396,33 @@ public class FakePlayerManagerService {
 
         if (inventory != null) {
             for (int index = 0; index < 9; index++) {
-                hotbarLines.add(formatInventorySlot(index, inventory.mainInventory[index], index == selectedHotbarSlot));
+                hotbarLines
+                    .add(formatInventorySlot(index, inventory.mainInventory[index], index == selectedHotbarSlot));
             }
 
             for (int index = 9; index < inventory.mainInventory.length; index++) {
                 mainInventoryLines.add(formatInventorySlot(index, inventory.mainInventory[index], false));
             }
 
-            armorLines.add(formatArmorSlot("Helmet", inventory.armorInventory.length > 3 ? inventory.armorInventory[3] : null));
-            armorLines.add(formatArmorSlot("Chestplate", inventory.armorInventory.length > 2 ? inventory.armorInventory[2] : null));
-            armorLines.add(formatArmorSlot("Leggings", inventory.armorInventory.length > 1 ? inventory.armorInventory[1] : null));
-            armorLines.add(formatArmorSlot("Boots", inventory.armorInventory.length > 0 ? inventory.armorInventory[0] : null));
+            armorLines.add(
+                formatArmorSlot("Helmet", inventory.armorInventory.length > 3 ? inventory.armorInventory[3] : null));
+            armorLines.add(
+                formatArmorSlot(
+                    "Chestplate",
+                    inventory.armorInventory.length > 2 ? inventory.armorInventory[2] : null));
+            armorLines.add(
+                formatArmorSlot("Leggings", inventory.armorInventory.length > 1 ? inventory.armorInventory[1] : null));
+            armorLines.add(
+                formatArmorSlot("Boots", inventory.armorInventory.length > 0 ? inventory.armorInventory[0] : null));
         }
 
         return new InventorySnapshot(botName, selectedHotbarSlot, hotbarLines, mainInventoryLines, armorLines);
     }
 
     public static String normalizeGameMode(String input) {
-        String normalized = input == null ? "" : input.trim().toLowerCase(Locale.ROOT);
+        String normalized = input == null ? ""
+            : input.trim()
+                .toLowerCase(Locale.ROOT);
         switch (normalized) {
             case "0":
             case "survival":
@@ -262,7 +439,9 @@ public class FakePlayerManagerService {
     }
 
     public static String normalizeLookMode(String input) {
-        String normalized = input == null ? "" : input.trim().toLowerCase(Locale.ROOT);
+        String normalized = input == null ? ""
+            : input.trim()
+                .toLowerCase(Locale.ROOT);
         switch (normalized) {
             case "north":
             case "south":
@@ -331,27 +510,43 @@ public class FakePlayerManagerService {
     }
 
     private String suggestBotName() {
-        if (FakePlayerRegistry.getCount() != 1) {
-            return "";
+        if (FakePlayerRegistry.getCount() == 1) {
+            return FakePlayerRegistry.getAll()
+                .values()
+                .stream()
+                .map(FakePlayer::getCommandSenderName)
+                .findFirst()
+                .orElse("");
         }
-        return FakePlayerRegistry.getAll()
-            .values()
-            .stream()
-            .map(FakePlayer::getCommandSenderName)
-            .findFirst()
-            .orElse("");
+        return defaultSelectedBotName();
     }
 
     private String buildOfflineBotMessage(String botName) {
-        List<String> onlineBots = FakePlayerRegistry.getAll()
-            .values()
-            .stream()
-            .map(FakePlayer::getCommandSenderName)
-            .sorted(String.CASE_INSENSITIVE_ORDER)
-            .collect(Collectors.toList());
+        List<String> onlineBots = listBotNames();
         if (onlineBots.isEmpty()) {
             return "Fake player " + botName + " is not online";
         }
         return "Fake player " + botName + " is not online. Online bots: " + String.join(", ", onlineBots);
+    }
+
+    private FakePlayer findBot(String botName) {
+        String normalizedBotName = botName == null ? "" : botName.trim();
+        if (normalizedBotName.isEmpty()) {
+            return null;
+        }
+        return FakePlayerRegistry.getFakePlayer(normalizedBotName);
+    }
+
+    private FakePlayer findBotOrThrow(String botName) {
+        String normalizedBotName = requireBotName(botName);
+        FakePlayer fakePlayer = FakePlayerRegistry.getFakePlayer(normalizedBotName);
+        if (fakePlayer == null) {
+            throw new CommandException(buildOfflineBotMessage(normalizedBotName));
+        }
+        return fakePlayer;
+    }
+
+    private String formatOwnerLabel(UUID ownerUUID) {
+        return ownerUUID == null ? "(server)" : ownerUUID.toString();
     }
 }
