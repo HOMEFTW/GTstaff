@@ -262,7 +262,7 @@ public class FakePlayer extends EntityPlayerMP {
     }
 
     public boolean isFollowing() {
-        return this.followService.isFollowing();
+        return this.followService != null && this.followService.isFollowing();
     }
 
     private static final EnumChatFormatting[] BOT_COLORS = { EnumChatFormatting.GREEN, EnumChatFormatting.AQUA,
