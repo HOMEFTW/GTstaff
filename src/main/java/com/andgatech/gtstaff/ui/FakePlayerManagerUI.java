@@ -495,6 +495,135 @@ public class FakePlayerManagerUI extends AbstractUIFactory<GuiData> {
                     .left(2)
                     .size(280, 60));
 
+            // ---- Follow Section ----
+            col.child(
+                new TextWidget("假人跟随").top(2)
+                    .left(150)
+                    .size(80, 14));
+
+            col.child(
+                new ButtonWidget<>().size(60, 18)
+                    .overlay(IKey.dynamic(() -> {
+                        if (!hasSelectedBot(service, state)) return "跟随我";
+                        FakePlayerManagerService.BotDetails d = service.describeBot(state.selectedBotName);
+                        return d.following ? "跟随中..." : "跟随我";
+                    }))
+                    .syncHandler(new InteractionSyncHandler().setOnMousePressed(mouseData -> {
+                        if (mouseData.mouseButton != 0 || mouseData.isClient()) return;
+                        if (!hasSelectedBot(service, state)) {
+                            state.statusMessage = "请先选择一个假人。";
+                            return;
+                        }
+                        try {
+                            state.statusMessage = service.startFollow(player, state.selectedBotName);
+                        } catch (CommandException e) {
+                            state.statusMessage = e.getMessage();
+                        }
+                    }))
+                    .setEnabledIf(w -> hasSelectedBot(service, state))
+                    .top(18)
+                    .left(150));
+
+            col.child(
+                new ButtonWidget<>().size(60, 18)
+                    .overlay(IKey.str("停止跟随"))
+                    .syncHandler(new InteractionSyncHandler().setOnMousePressed(mouseData -> {
+                        if (mouseData.mouseButton != 0 || mouseData.isClient()) return;
+                        if (!hasSelectedBot(service, state)) {
+                            state.statusMessage = "请先选择一个假人。";
+                            return;
+                        }
+                        try {
+                            state.statusMessage = service.stopFollow(player, state.selectedBotName);
+                        } catch (CommandException e) {
+                            state.statusMessage = e.getMessage();
+                        }
+                    }))
+                    .setEnabledIf(w -> hasSelectedBot(service, state))
+                    .top(18)
+                    .left(214));
+
+            // Follow range buttons
+            col.child(
+                new TextWidget("跟随距离:").top(40)
+                    .left(150)
+                    .size(50, 14));
+
+            String[] followRangeLabels = { "1", "3", "5", "8", "10" };
+            int[] followRangeValues = { 1, 3, 5, 8, 10 };
+            for (int i = 0; i < followRangeLabels.length; i++) {
+                final int range = followRangeValues[i];
+                final String label = followRangeLabels[i];
+                col.child(
+                    new ButtonWidget<>().size(22, 14)
+                        .overlay(IKey.dynamic(() -> {
+                            if (!hasSelectedBot(service, state)) return label;
+                            FakePlayerManagerService.BotDetails d = service.describeBot(state.selectedBotName);
+                            return d.followRange == range ? "[" + label + "]" : label;
+                        }))
+                        .syncHandler(new InteractionSyncHandler().setOnMousePressed(mouseData -> {
+                            if (mouseData.mouseButton != 0 || mouseData.isClient()) return;
+                            if (!hasSelectedBot(service, state)) {
+                                state.statusMessage = "请先选择一个假人。";
+                                return;
+                            }
+                            try {
+                                state.statusMessage = service.setFollowRange(player, state.selectedBotName, range);
+                            } catch (CommandException e) {
+                                state.statusMessage = e.getMessage();
+                            }
+                        }))
+                        .setEnabledIf(w -> hasSelectedBot(service, state))
+                        .top(56)
+                        .left(150 + i * 24));
+            }
+
+            // Teleport range buttons
+            col.child(
+                new TextWidget("传送距离:").top(72)
+                    .left(150)
+                    .size(50, 14));
+
+            String[] tpRangeLabels = { "16", "32", "64", "96", "128" };
+            int[] tpRangeValues = { 16, 32, 64, 96, 128 };
+            for (int i = 0; i < tpRangeLabels.length; i++) {
+                final int range = tpRangeValues[i];
+                final String label = tpRangeLabels[i];
+                col.child(
+                    new ButtonWidget<>().size(24, 14)
+                        .overlay(IKey.dynamic(() -> {
+                            if (!hasSelectedBot(service, state)) return label;
+                            FakePlayerManagerService.BotDetails d = service.describeBot(state.selectedBotName);
+                            return d.teleportRange == range ? "[" + label + "]" : label;
+                        }))
+                        .syncHandler(new InteractionSyncHandler().setOnMousePressed(mouseData -> {
+                            if (mouseData.mouseButton != 0 || mouseData.isClient()) return;
+                            if (!hasSelectedBot(service, state)) {
+                                state.statusMessage = "请先选择一个假人。";
+                                return;
+                            }
+                            try {
+                                state.statusMessage = service.setTeleportRange(player, state.selectedBotName, range);
+                            } catch (CommandException e) {
+                                state.statusMessage = e.getMessage();
+                            }
+                        }))
+                        .setEnabledIf(w -> hasSelectedBot(service, state))
+                        .top(88)
+                        .left(150 + i * 26));
+            }
+
+            // Follow status text
+            col.child(
+                new TextWidget(IKey.dynamic(() -> {
+                    if (!hasSelectedBot(service, state)) return "选择假人以查看跟随状态。";
+                    FakePlayerManagerService.BotDetails d = service.describeBot(state.selectedBotName);
+                    if (!d.following) return "未跟随。\n点击\"跟随我\"让假人跟随你。";
+                    return "跟随中。\n跟随距离: " + d.followRange + " 格\n传送距离: " + d.teleportRange + " 格";
+                })).top(106)
+                    .left(150)
+                    .size(140, 40));
+
             return col;
         }
 
