@@ -143,19 +143,22 @@ public class FollowService {
         if (server == null) return;
 
         int targetDim = target.dimension;
-        WorldServer oldWorld = server.worldServerForDimension(fakePlayer.dimension);
         WorldServer newWorld = server.worldServerForDimension(targetDim);
         if (newWorld == null) return;
 
-        if (oldWorld != null) {
-            oldWorld.removeEntity(fakePlayer);
+        int oldDim = fakePlayer.dimension;
+
+        // Use vanilla transfer to handle world removal, dimension change, and world spawn
+        server.getConfigurationManager().transferPlayerToDimension(fakePlayer, targetDim);
+
+        // Verify dimension actually changed
+        if (fakePlayer.dimension != targetDim) {
+            return;
         }
 
-        fakePlayer.dimension = targetDim;
+        // Override position to match target (vanilla transfer uses portal/spawn point)
         fakePlayer.setPositionAndUpdate(target.posX, target.posY, target.posZ);
         fakePlayer.theItemInWorldManager.setWorld(newWorld);
-
-        newWorld.spawnEntityInWorld(fakePlayer);
 
         if (fakePlayer.playerNetServerHandler != null) {
             fakePlayer.playerNetServerHandler.setPlayerLocation(target.posX, target.posY, target.posZ, fakePlayer.rotationYaw, fakePlayer.rotationPitch);
