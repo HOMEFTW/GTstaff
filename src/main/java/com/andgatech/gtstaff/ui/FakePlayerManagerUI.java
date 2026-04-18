@@ -109,6 +109,9 @@ public class FakePlayerManagerUI extends AbstractUIFactory<GuiData> {
                 .child(
                     createTabButton("监控", "monitor", state, pageController, 3).top(20)
                         .left(214))
+                .child(
+                    createTabButton("其他", "other", state, pageController, 4).top(20)
+                        .left(284))
                 .child(buildBotList(service, state))
                 .child(buildPagedContent(pageController, service, state, player))
                 .child(
@@ -161,6 +164,7 @@ public class FakePlayerManagerUI extends AbstractUIFactory<GuiData> {
             paged.addPage(buildInventoryPage(service, state, player));
             paged.addPage(buildActionsPage(service, state, player));
             paged.addPage(buildMonitorPage(service, state, player));
+            paged.addPage(buildOtherPage(service, state, player));
 
             return paged;
         }
@@ -405,6 +409,95 @@ public class FakePlayerManagerUI extends AbstractUIFactory<GuiData> {
             return col;
         }
 
+        // ---- Other Features ----
+        private Column buildOtherPage(FakePlayerManagerService service, ManagerState state, EntityPlayerMP player) {
+            Column col = new Column();
+
+            col.child(
+                new TextWidget("敌对生物驱逐器").top(2)
+                    .left(2)
+                    .size(120, 14));
+
+            col.child(
+                new ButtonWidget<>().size(80, 18)
+                    .overlay(IKey.dynamic(() -> {
+                        if (!hasSelectedBot(service, state)) return "驱逐: 关";
+                        FakePlayerManagerService.BotDetails d = service.describeBot(state.selectedBotName);
+                        return d.monsterRepelling ? "驱逐: 开" : "驱逐: 关";
+                    }))
+                    .syncHandler(new InteractionSyncHandler().setOnMousePressed(mouseData -> {
+                        if (mouseData.mouseButton != 0 || mouseData.isClient()) return;
+                        if (!hasSelectedBot(service, state)) {
+                            state.statusMessage = "请先选择一个假人。";
+                            return;
+                        }
+                        FakePlayerManagerService.BotDetails d = service.describeBot(state.selectedBotName);
+                        try {
+                            state.statusMessage = service.toggleMonsterRepel(player, state.selectedBotName, !d.monsterRepelling);
+                        } catch (CommandException e) {
+                            state.statusMessage = e.getMessage();
+                        }
+                    }))
+                    .setEnabledIf(w -> hasSelectedBot(service, state))
+                    .top(20)
+                    .left(2));
+
+            // Range display
+            col.child(
+                new TextWidget(IKey.dynamic(() -> {
+                    if (!hasSelectedBot(service, state)) return "范围: -";
+                    FakePlayerManagerService.BotDetails d = service.describeBot(state.selectedBotName);
+                    return "范围: " + d.monsterRepelRange + "格";
+                })).top(20)
+                    .left(88)
+                    .size(80, 14));
+
+            // Range buttons
+            String[] rangeLabels = { "32", "64", "128", "256", "400" };
+            int[] rangeValues = { 32, 64, 128, 256, 400 };
+            for (int i = 0; i < rangeLabels.length; i++) {
+                final int idx = i;
+                final int range = rangeValues[i];
+                final String label = rangeLabels[i];
+                col.child(
+                    new ButtonWidget<>().size(36, 14)
+                        .overlay(IKey.dynamic(() -> {
+                            if (!hasSelectedBot(service, state)) return label;
+                            FakePlayerManagerService.BotDetails d = service.describeBot(state.selectedBotName);
+                            return d.monsterRepelRange == range ? "[" + label + "]" : label;
+                        }))
+                        .syncHandler(new InteractionSyncHandler().setOnMousePressed(mouseData -> {
+                            if (mouseData.mouseButton != 0 || mouseData.isClient()) return;
+                            if (!hasSelectedBot(service, state)) {
+                                state.statusMessage = "请先选择一个假人。";
+                                return;
+                            }
+                            try {
+                                state.statusMessage = service.setMonsterRepelRange(player, state.selectedBotName, range);
+                            } catch (CommandException e) {
+                                state.statusMessage = e.getMessage();
+                            }
+                        }))
+                        .setEnabledIf(w -> hasSelectedBot(service, state))
+                        .top(40)
+                        .left(2 + idx * 40));
+            }
+
+            // Description text
+            col.child(
+                new TextWidget(IKey.dynamic(() -> {
+                    if (!hasSelectedBot(service, state)) return "选择假人以查看驱逐状态。";
+                    FakePlayerManagerService.BotDetails d = service.describeBot(state.selectedBotName);
+                    if (!d.monsterRepelling) return "驱逐器已关闭。\n开启后将阻止假人附近\n敌对生物的生成。";
+                    return "驱逐器运行中。\n以假人为中心 " + d.monsterRepelRange
+                        + " 格球形范围内\n阻止敌对生物生成。\n假人移动时范围自动跟随。";
+                })).top(58)
+                    .left(2)
+                    .size(280, 60));
+
+            return col;
+        }
+
         // ---- Monitor ----
         private Column buildMonitorPage(FakePlayerManagerService service, ManagerState state, EntityPlayerMP player) {
             Column col = new Column();
@@ -562,6 +655,7 @@ public class FakePlayerManagerUI extends AbstractUIFactory<GuiData> {
                 case "inventory":
                 case "actions":
                 case "monitor":
+                case "other":
                     return normalized;
                 case "overview":
                 default:

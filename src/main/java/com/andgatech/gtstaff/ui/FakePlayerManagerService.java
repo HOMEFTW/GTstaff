@@ -181,9 +181,12 @@ public class FakePlayerManagerService {
         public final int monitorRange;
         public final int reminderInterval;
         public final boolean online;
+        public final boolean monsterRepelling;
+        public final int monsterRepelRange;
 
         private BotDetails(String botName, String ownerLabel, int blockX, int blockY, int blockZ, int dimension,
-            int selectedHotbarSlot, boolean monitoring, int monitorRange, int reminderInterval, boolean online) {
+            int selectedHotbarSlot, boolean monitoring, int monitorRange, int reminderInterval, boolean online,
+            boolean monsterRepelling, int monsterRepelRange) {
             this.botName = botName;
             this.ownerLabel = ownerLabel;
             this.blockX = blockX;
@@ -195,6 +198,8 @@ public class FakePlayerManagerService {
             this.monitorRange = monitorRange;
             this.reminderInterval = reminderInterval;
             this.online = online;
+            this.monsterRepelling = monsterRepelling;
+            this.monsterRepelRange = monsterRepelRange;
         }
     }
 
@@ -313,6 +318,27 @@ public class FakePlayerManagerService {
         return "提醒频率已设置为 " + seconds + " 秒 for " + normalizedBotName + ".";
     }
 
+    public String toggleMonsterRepel(ICommandSender sender, String botName, boolean enable) {
+        String normalizedBotName = requireBotName(botName);
+        FakePlayer fakePlayer = findBot(normalizedBotName);
+        if (fakePlayer == null) {
+            throw new CommandException(buildOfflineBotMessage(normalizedBotName));
+        }
+        fakePlayer.setMonsterRepelling(enable);
+        return (enable ? "已开启敌对生物驱逐" : "已关闭敌对生物驱逐") + " for " + normalizedBotName
+            + " (范围: " + fakePlayer.getMonsterRepelRange() + "格)";
+    }
+
+    public String setMonsterRepelRange(ICommandSender sender, String botName, int range) {
+        String normalizedBotName = requireBotName(botName);
+        FakePlayer fakePlayer = findBot(normalizedBotName);
+        if (fakePlayer == null) {
+            throw new CommandException(buildOfflineBotMessage(normalizedBotName));
+        }
+        fakePlayer.setMonsterRepelRange(range);
+        return "敌对生物驱逐范围已设置为 " + range + " 格 for " + normalizedBotName + ".";
+    }
+
     public String scanMachines(String botName) {
         FakePlayer fakePlayer = findBot(botName);
         if (fakePlayer == null) {
@@ -371,7 +397,9 @@ public class FakePlayerManagerService {
                 false,
                 0,
                 600,
-                false);
+                false,
+                false,
+                64);
         }
         return new BotDetails(
             fakePlayer.getCommandSenderName(),
@@ -384,7 +412,9 @@ public class FakePlayerManagerService {
             fakePlayer.isMonitoring(),
             fakePlayer.getMonitorRange(),
             fakePlayer.getReminderInterval(),
-            true);
+            true,
+            fakePlayer.isMonsterRepelling(),
+            fakePlayer.getMonsterRepelRange());
     }
 
     public String openInventoryManager(EntityPlayerMP player, String botName) {

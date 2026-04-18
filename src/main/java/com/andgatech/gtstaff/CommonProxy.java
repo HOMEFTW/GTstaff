@@ -8,8 +8,11 @@ import com.andgatech.gtstaff.command.CommandGTstaff;
 import com.andgatech.gtstaff.command.CommandPlayer;
 import com.andgatech.gtstaff.config.Config;
 import com.andgatech.gtstaff.fakeplayer.FakePlayerRegistry;
+import com.andgatech.gtstaff.fakeplayer.MonsterRepellentService;
 import com.andgatech.gtstaff.fakeplayer.FakePlayerRestoreScheduler;
 import com.andgatech.gtstaff.ui.FakePlayerInventoryGuiHandler;
+
+import net.minecraftforge.common.MinecraftForge;
 
 import cpw.mods.fml.common.event.FMLInitializationEvent;
 import cpw.mods.fml.common.event.FMLLoadCompleteEvent;
@@ -30,6 +33,7 @@ public class CommonProxy {
     public void init(FMLInitializationEvent event) {
         FakePlayerRestoreScheduler.register();
         NetworkRegistry.INSTANCE.registerGuiHandler(GTstaff.instance, FakePlayerInventoryGuiHandler.INSTANCE);
+        MinecraftForge.EVENT_BUS.register(MonsterRepellentService.INSTANCE);
     }
 
     public void postInit(FMLPostInitializationEvent event) {}

@@ -23,6 +23,8 @@ public class FakePlayer extends EntityPlayerMP {
     private UUID ownerUUID;
     private final MachineMonitorService machineMonitorService;
     private boolean disconnected;
+    private boolean monsterRepelling;
+    private int monsterRepelRange = 64;
 
     public FakePlayer(MinecraftServer server, WorldServer world, GameProfile profile) {
         super(server, world, profile, new ItemInWorldManager(world));
@@ -235,6 +237,22 @@ public class FakePlayer extends EntityPlayerMP {
 
     public MachineMonitorService getMachineMonitorService() {
         return this.machineMonitorService;
+    }
+
+    public boolean isMonsterRepelling() {
+        return this.monsterRepelling;
+    }
+
+    public void setMonsterRepelling(boolean repelling) {
+        this.monsterRepelling = repelling;
+    }
+
+    public int getMonsterRepelRange() {
+        return this.monsterRepelRange;
+    }
+
+    public void setMonsterRepelRange(int range) {
+        this.monsterRepelRange = range;
     }
 
     private static final EnumChatFormatting[] BOT_COLORS = { EnumChatFormatting.GREEN, EnumChatFormatting.AQUA,

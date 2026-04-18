@@ -5,8 +5,18 @@
 ## 基本信息
 - Mod Name: GTstaff
 - Mod ID: gtstaff
+- Version: v0.1
 - Root Package: `com.andgatech.gtstaff`
 - Target: MC 1.7.10 + Forge 10.13.4.1614 + GTNH
+- GitHub: https://github.com/HOMEFTW/GTstaff
+
+### Mod 入口与代理
+- `GTstaff`：`@Mod` 入口类，定义 MODID/VERSION/LOG，通过 `@SidedProxy` 委托所有 FML 生命周期事件
+- `CommonProxy`：服务端/通用代理，负责配置同步、命令注册（`CommandGTstaff`/`CommandPlayer`）、`FakePlayerRestoreScheduler` 调度、`FakePlayerInventoryGuiHandler` 注册、registry 保存/加载
+- `ClientProxy`：客户端代理，扩展 `CommonProxy` 并额外向 `GuiManager` 注册 `FakePlayerManagerUI` factory（带防重复注册保护）
+
+### Mixin 接口
+- `IFakePlayerHolder`：单方法接口 `PlayerActionPack getActionPack()`，供 Mixin 在 `EntityPlayerMP` 上访问 action pack
 
 ## 已实现内容
 

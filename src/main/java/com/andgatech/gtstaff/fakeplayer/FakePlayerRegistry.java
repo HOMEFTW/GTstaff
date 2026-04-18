@@ -32,6 +32,8 @@ public class FakePlayerRegistry {
     private static final String MONITORING_KEY = "Monitoring";
     private static final String MONITOR_RANGE_KEY = "MonitorRange";
     private static final String REMINDER_INTERVAL_KEY = "ReminderInterval";
+    private static final String MONSTER_REPELLING_KEY = "MonsterRepelling";
+    private static final String MONSTER_REPEL_RANGE_KEY = "MonsterRepelRange";
 
     private static final Map<String, FakePlayer> fakePlayers = new HashMap<String, FakePlayer>();
     private static final Map<String, PersistedBotData> persistedBots = new HashMap<String, PersistedBotData>();
@@ -58,10 +60,12 @@ public class FakePlayerRegistry {
         private final boolean monitoring;
         private final int monitorRange;
         private final int reminderInterval;
+        private final boolean monsterRepelling;
+        private final int monsterRepelRange;
 
         private PersistedBotData(String name, UUID profileId, UUID ownerUUID, int dimension, double posX, double posY,
             double posZ, float yaw, float pitch, int gameTypeId, boolean flying, boolean monitoring, int monitorRange,
-            int reminderInterval) {
+            int reminderInterval, boolean monsterRepelling, int monsterRepelRange) {
             this.name = name;
             this.profileId = profileId;
             this.ownerUUID = ownerUUID;
@@ -76,6 +80,8 @@ public class FakePlayerRegistry {
             this.monitoring = monitoring;
             this.monitorRange = monitorRange;
             this.reminderInterval = reminderInterval;
+            this.monsterRepelling = monsterRepelling;
+            this.monsterRepelRange = monsterRepelRange;
         }
 
         public String getName() {
@@ -132,6 +138,14 @@ public class FakePlayerRegistry {
 
         public int getReminderInterval() {
             return this.reminderInterval;
+        }
+
+        public boolean isMonsterRepelling() {
+            return this.monsterRepelling;
+        }
+
+        public int getMonsterRepelRange() {
+            return this.monsterRepelRange;
         }
     }
 
@@ -225,6 +239,8 @@ public class FakePlayerRegistry {
             bot.setBoolean(MONITORING_KEY, data.isMonitoring());
             bot.setInteger(MONITOR_RANGE_KEY, data.getMonitorRange());
             bot.setInteger(REMINDER_INTERVAL_KEY, data.getReminderInterval());
+            bot.setBoolean(MONSTER_REPELLING_KEY, data.isMonsterRepelling());
+            bot.setInteger(MONSTER_REPEL_RANGE_KEY, data.getMonsterRepelRange());
             botList.appendTag(bot);
         }
         root.setTag(ROOT_KEY, botList);
@@ -275,6 +291,8 @@ public class FakePlayerRegistry {
                 boolean monitoring = bot.hasKey(MONITORING_KEY) && bot.getBoolean(MONITORING_KEY);
                 int monitorRange = bot.hasKey(MONITOR_RANGE_KEY) ? bot.getInteger(MONITOR_RANGE_KEY) : 16;
                 int reminderInterval = bot.hasKey(REMINDER_INTERVAL_KEY) ? bot.getInteger(REMINDER_INTERVAL_KEY) : 600;
+                boolean monsterRepelling = bot.hasKey(MONSTER_REPELLING_KEY) && bot.getBoolean(MONSTER_REPELLING_KEY);
+                int monsterRepelRange = bot.hasKey(MONSTER_REPEL_RANGE_KEY) ? bot.getInteger(MONSTER_REPEL_RANGE_KEY) : 64;
 
                 persistedBots.put(
                     normalizedName,
@@ -292,7 +310,9 @@ public class FakePlayerRegistry {
                         flying,
                         monitoring,
                         monitorRange,
-                        reminderInterval));
+                        reminderInterval,
+                        monsterRepelling,
+                        monsterRepelRange));
             }
         } catch (IOException e) {
             throw new IllegalStateException("Unable to load fake player registry from " + file.getAbsolutePath(), e);
@@ -322,6 +342,8 @@ public class FakePlayerRegistry {
             fakePlayer.setMonitoring(data.isMonitoring());
             fakePlayer.setMonitorRange(data.getMonitorRange());
             fakePlayer.setReminderInterval(data.getReminderInterval());
+            fakePlayer.setMonsterRepelling(data.isMonsterRepelling());
+            fakePlayer.setMonsterRepelRange(data.getMonsterRepelRange());
             register(fakePlayer, data.getOwnerUUID());
         }
     }
@@ -352,6 +374,8 @@ public class FakePlayerRegistry {
             flying,
             fakePlayer.isMonitoring(),
             fakePlayer.getMonitorRange(),
-            fakePlayer.getReminderInterval());
+            fakePlayer.getReminderInterval(),
+            fakePlayer.isMonsterRepelling(),
+            fakePlayer.getMonsterRepelRange());
     }
 }
