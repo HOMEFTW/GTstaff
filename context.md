@@ -5,14 +5,14 @@
 ## 基本信息
 - Mod Name: GTstaff
 - Mod ID: gtstaff
-- Version: v0.1
+- Version: v0.1.1
 - Root Package: `com.andgatech.gtstaff`
 - Target: MC 1.7.10 + Forge 10.13.4.1614 + GTNH
 - GitHub: https://github.com/HOMEFTW/GTstaff
 
 ### Mod 入口与代理
 - `GTstaff`：`@Mod` 入口类，定义 MODID/VERSION/LOG，通过 `@SidedProxy` 委托所有 FML 生命周期事件
-- `CommonProxy`：服务端/通用代理，负责配置同步、命令注册（`CommandGTstaff`/`CommandPlayer`）、`FakePlayerRestoreScheduler` 调度、`FakePlayerInventoryGuiHandler` 注册、registry 保存/加载
+- `CommonProxy`：服务端/通用代理，负责配置同步、命令注册（`CommandGTstaff`/`CommandPlayer`）、`FakePlayerRestoreScheduler` 调度、`FakePlayerInventoryGuiHandler` 注册、`MonsterRepellentService` 事件注册、registry 保存/加载
 - `ClientProxy`：客户端代理，扩展 `CommonProxy` 并额外向 `GuiManager` 注册 `FakePlayerManagerUI` factory（带防重复注册保护）
 
 ### Mixin 接口
@@ -24,7 +24,7 @@
 - `Action`：支持 `once`、`continuous`、`interval`
 - `FakeNetworkManager`：空壳网络连接，使用 `EmbeddedChannel`
 - `FakeNetHandlerPlayServer`：在 idle / duplicate login 文本踢出时回收 fake player
-- `FakePlayer`：支持 `createFake`、`createShadow`、owner 绑定、自动重生、自杀清理、机器监控挂接，以及基于持久化快照的 `restorePersisted(...)`
+- `FakePlayer`：支持 `createFake`、`createShadow`、owner 绑定、自动重生、自杀清理、机器监控挂接、敌对生物驱逐（`monsterRepelling`/`monsterRepelRange`），以及基于持久化快照的 `restorePersisted(...)`
 - `FakePlayer.runLivingUpdate(...)`：在 `EntityPlayerMP.onUpdate()` 之后直接执行 `onLivingUpdate()`，补上 fake player 的移动/跳跃/碰撞链路，但不再调用 `onUpdateEntity()` 触发第二次 `PlayerTickEvent`
 - `PlayerActionPack`：支持 `USE`、`ATTACK`、`JUMP`、`DROP_ITEM`、`DROP_STACK`，包含 `turn`、`stopMovement`、`setSlot` 与挖掘状态机
 
@@ -44,13 +44,20 @@
 - `FakePlayer.getChatColor()` / `colorizeName()`：基于名称hash从10种 `EnumChatFormatting` 颜色中分配，聊天用 `ChatStyle.setColor()`，UI 用 `§x` 格式代码
 - 监控报告已翻译为中文
 
+### 敌对生物驱逐
+- `MonsterRepellentService`：订阅 `MinecraftForge.EVENT_BUS` 的 `CheckSpawn` 事件，遍历所有开启驱逐的 fake player，在球形范围内阻止敌对生物生成
+- `FakePlayer.monsterRepelling`：驱逐开关状态（boolean）
+- `FakePlayer.monsterRepelRange`：驱逐范围（int，默认64格），UI 提供 32/64/128/256/400 五档选择
+- 假人移动时驱逐范围自动跟随（每次 CheckSpawn 实时检查当前坐标）
+- 驱逐状态通过 `FakePlayerRegistry` 持久化到 `data/gtstaff_registry.dat`
+
 ### 持久化
 - `FakePlayerRegistry`：支持大小写不敏感查询、按 owner 计数、`save(File)`、`load(File)`、`restorePersisted(...)`
-- `data/gtstaff_registry.dat`：当前保存 bot 名称、`profileId`、`owner UUID`、维度、坐标、朝向、游戏模式、飞行状态、监控开关、监控半径与提醒频率
+- `data/gtstaff_registry.dat`：当前保存 bot 名称、`profileId`、`owner UUID`、维度、坐标、朝向、游戏模式、飞行状态、监控开关、监控半径、提醒频率、驱逐开关与驱逐范围
 - `CommonProxy`：在 `serverStarted` 加载并恢复 fake player，在 `serverStopping` 保存 registry
 
 ### UI
-- `FakePlayerManagerUI`：基于 `ModularUI2` 的 fake player 管理面板，可由 `/gtstaff` 打开；当前已重构为左侧 bot 列表（带颜色） + 右侧 `Overview / Inventory / Actions / Monitor` 页签
+- `FakePlayerManagerUI`：基于 `ModularUI2` 的 fake player 管理面板，可由 `/gtstaff` 打开；当前已重构为左侧 bot 列表（带颜色） + 右侧 `Overview / Inventory / Actions / Monitor / Other` 页签
 - Monitor 页签：切换监控开关 + 扫描按钮 + 4个提醒频率按钮（10秒/30秒/1分/5分）+ 可滚动机器状态列表
 - `ClientProxy.init(...)`：当前会向 `GuiManager` 注册 `FakePlayerManagerUI.INSTANCE`，保证客户端能解开 `OpenGuiPacket`
 - `PopupPanelLayout`：统一让 Spawn / Inventory / Look 三个子窗口相对主面板居中，避免 panel 出现在主界面右侧屏幕外缘
@@ -98,7 +105,7 @@
 - 已通过 `./gradlew.bat --offline test` 作为当前分支的最终自动化 smoke test
 - 已通过 `./gradlew.bat --offline assemble` 产出客户端测试用 jar，产物位于 `build/libs/`
 - 最新重新打包 jar：`build/libs/gtstaff-b166ed7-master+b166ed77c1-dirty.jar`（含监控增强、颜色分配、中文翻译、提醒频率按钮）
-- 最新客户端测试主 jar：`build/libs/gtstaff-7a7f3c5-master+7a7f3c523a-dirty.jar`
+- 最新客户端测试主 jar：`build/libs/gtstaff-v0.1.1-master+1f334d4b20-dirty.jar`（含敌对生物驱逐器、其他功能页签）
 
 ## 依赖
 - JUnit Jupiter 5.10.2（测试）

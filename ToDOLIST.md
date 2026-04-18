@@ -9,18 +9,10 @@
 - [x] 阅读 `CustomNPC-Plus-master` 源码并完成一次对 `GTstaff` 的可借鉴点调研
 # TODO 列表
 
-## 当前计划
-- [ ] 在可启动游戏环境中完成最终人工 smoke test：重点验证新的 `/gtstaff ui` 420x200 分页布局、左侧可滚动 bot 列表、四个页签交互、Spawn/Look 弹窗、原版背包容器。
-- [ ] 使用最新 `build/libs/gtstaff-9563983-master+*.jar` 进行客户端实机测试。
-- [ ] 使用最新 `build/libs/gtstaff-7a7f3c5-master+7a7f3c523a-dirty.jar` 进行客户端实机测试，确认集成服启动、MUI2 管理台与 chest-style 背包 GUI 的行为。
-- [ ] 使用最新 `build/libs/gtstaff-b166ed7-master+b166ed77c1-dirty.jar` 进行客户端/集成服实机测试，确认监控增强、颜色分配、提醒频率、聊天换行等功能正常。
-- [ ] 如需让 `./gradlew.bat build` 全绿，补修 `spotlessJavaCheck` 的 CRLF/LF 格式问题。
 
-## 未来想法
-- [ ] 让 `Spawn / Look` 面板也直接消费主界面的当前选中 bot，而不是继续手填 bot 名称。
-- [ ] 继续扩展 `Actions / Monitor` 页签，把常用控制与监控摘要直接放进主管理台右侧。
 
 ## 已完成
+- [x] 敌对生物驱逐器功能 + UI其他功能页签（v0.1.1）
 - [x] 修复 fake player 手动调用 `onUpdateEntity()` 导致第二次 `PlayerTickEvent` 触发 `ae2fc` 崩溃的问题，并改为直接运行 `onLivingUpdate()`
 - [x] 完成 Task 13（GT机器监控增强）：扩展 `MachineState` 支持13种故障类型（断电/需维护/输出满/结构不完整/污染堵塞/无法修复/缺涡轮/部件错误/发电机不足/资源耗尽/电力不足/电压不足），接入 `ShutDownReasonRegistry` 和 `CheckRecipeResult.getID()` 全量检测，翻译监控报告为中文
 - [x] 完成 Task 14（假人颜色分配）：基于名称hash为每个假人分配唯一颜色（`EnumChatFormatting`），聊天消息通过 `ChatStyle.setColor()` 着色，UI 通过 `§x` 格式代码显示

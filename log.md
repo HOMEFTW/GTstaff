@@ -1,5 +1,23 @@
 # 开发日志
 
+## 2026-04-18：敌对生物驱逐器功能
+
+### 已完成
+- 新建 `MonsterRepellentService`，订阅 `CheckSpawn` 事件，在假人球形范围内阻止敌对生物生成
+- `FakePlayer` 新增 `monsterRepelling` / `monsterRepelRange` 字段及 getter/setter
+- UI 新增"其他"页签（第5个 tab），含驱逐开关按钮和 32/64/128/256/400 格范围选择
+- `FakePlayerRegistry.PersistedBotData` 扩展驱逐字段，save/load/snapshot/restore 全链路持久化
+- `FakePlayerManagerService.BotDetails` 扩展驱逐字段，新增 `toggleMonsterRepel()` / `setMonsterRepelRange()`
+- `CommonProxy.init()` 中注册 `MonsterRepellentService` 到 `MinecraftForge.EVENT_BUS`
+- 编译通过、测试通过、打包 jar 成功
+- 推送 GitHub 并打 tag `v0.1.1`
+
+### 做出的决定
+- 不修改 GT5-Unofficial 的 `GTSpawnEventHandler`，而是在 GTstaff 内自建事件处理器，避免跨项目耦合
+- 假人移动时驱逐范围自动跟随（每次 CheckSpawn 实时检查假人当前坐标）
+
+---
+
 ## 2026-04-18：GT机器监控增强 + 假人颜色 + 中文翻译 + 提醒频率
 
 ### 已完成
