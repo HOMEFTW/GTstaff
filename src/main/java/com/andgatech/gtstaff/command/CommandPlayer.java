@@ -25,6 +25,7 @@ import com.andgatech.gtstaff.fakeplayer.ActionType;
 import com.andgatech.gtstaff.fakeplayer.FakeNetHandlerPlayServer;
 import com.andgatech.gtstaff.fakeplayer.FakePlayer;
 import com.andgatech.gtstaff.fakeplayer.FakePlayerRegistry;
+import com.andgatech.gtstaff.fakeplayer.FollowService;
 import com.andgatech.gtstaff.fakeplayer.IFakePlayerHolder;
 import com.andgatech.gtstaff.fakeplayer.PlayerActionPack;
 import com.andgatech.gtstaff.util.PermissionHelper;
@@ -38,7 +39,7 @@ public class CommandPlayer extends CommandBase {
 
     @Override
     public String getCommandUsage(ICommandSender sender) {
-        return "/player <name> spawn|kill|shadow|attack [once|continuous|interval <ticks>]|stopattack|use [once|continuous|interval <ticks>]|stopuse|jump|drop|dropStack|move|look|turn|sneak|unsneak|sprint|unsprint|mount|dismount|hotbar|stop|monitor ...";
+        return "/player <name> spawn|kill|shadow|attack|use|jump|drop|dropStack|move|look|turn|sneak|unsneak|sprint|unsprint|mount|dismount|hotbar|stop|monitor|follow [player|stop|range <n>|tprange <n>] ...";
     }
 
     @Override
@@ -78,6 +79,9 @@ public class CommandPlayer extends CommandBase {
                 return;
             case "monitor":
                 handleMonitor(sender, botName, trailingArgs);
+                return;
+            case "follow":
+                handleFollow(sender, botName, trailingArgs);
                 return;
             default:
                 handleManipulation(sender, botName, action, trailingArgs);
@@ -259,6 +263,56 @@ public class CommandPlayer extends CommandBase {
                 + (target.isMonitoring() ? "on" : "off")
                 + ", range="
                 + target.getMonitorRange());
+    }
+
+    protected void handleFollow(ICommandSender sender, String botName, String[] args) {
+        FakePlayer target = requireFakePlayer(botName);
+        if (PermissionHelper.cantManipulate(sender, target)) {
+            throw new CommandException("You do not have permission to control that bot");
+        }
+
+        FollowService followService = target.getFollowService();
+
+        if (args.length == 0) {
+            if (!(sender instanceof EntityPlayerMP player)) {
+                throw new CommandException("Only players can be followed");
+            }
+            followService.startFollowing(player.getUniqueID());
+            notifySender(sender, FakePlayer.colorizeName(target.getCommandSenderName()) + " 开始跟随你");
+            return;
+        }
+
+        String subCommand = args[0].toLowerCase(Locale.ROOT);
+        switch (subCommand) {
+            case "stop":
+                followService.stop();
+                target.moveForward = 0.0F;
+                target.moveStrafing = 0.0F;
+                target.setJumping(false);
+                notifySender(sender, FakePlayer.colorizeName(target.getCommandSenderName()) + " 停止跟随");
+                return;
+            case "range":
+                if (args.length != 2) {
+                    throw new WrongUsageException("/player <name> follow range <blocks>");
+                }
+                int followRange = parseIntWithMin(sender, args[1], 1);
+                followService.setFollowRange(followRange);
+                notifySender(sender, target.getCommandSenderName() + " 跟随距离设置为 " + followRange + " 格");
+                return;
+            case "tprange":
+                if (args.length != 2) {
+                    throw new WrongUsageException("/player <name> follow tprange <blocks>");
+                }
+                int tpRange = parseIntWithMin(sender, args[1], 2);
+                followService.setTeleportRange(tpRange);
+                notifySender(sender, target.getCommandSenderName() + " 传送距离设置为 " + tpRange + " 格");
+                return;
+            default:
+                EntityPlayerMP followTarget = getPlayer(sender, args[0]);
+                followService.startFollowing(followTarget.getUniqueID());
+                notifySender(sender, FakePlayer.colorizeName(target.getCommandSenderName()) + " 开始跟随 " + followTarget.getCommandSenderName());
+                return;
+        }
     }
 
     protected void handleManipulation(ICommandSender sender, String botName, String action, String[] args) {
