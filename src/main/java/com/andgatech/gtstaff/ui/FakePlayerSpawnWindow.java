@@ -20,7 +20,9 @@ public class FakePlayerSpawnWindow extends ModularPanel {
     private final FakePlayerManagerService service;
     private final EntityPlayerMP player;
     private final FakePlayerManagerService.SpawnDraft draft;
-    private String statusMessage = "Fill form, then Spawn.";
+    private String statusMessage = "填写表单后点击生成";
+    private TextFieldWidget nameField;
+    private StringSyncValue nameSyncValue;
 
     public FakePlayerSpawnWindow(ModularPanel parent, EntityPlayerMP player, PanelSyncManager syncManager) {
         this(parent, player, syncManager, new FakePlayerManagerService());
@@ -41,14 +43,14 @@ public class FakePlayerSpawnWindow extends ModularPanel {
             .background(new Rectangle().setColor(0xDD404040))
             .child(ButtonWidget.panelCloseButton())
             .child(
-                new TextWidget("Spawn Bot").top(10)
+                new TextWidget("生成假人").top(10)
                     .left(10))
             .child(
-                new TextWidget("Name").top(30)
+                new TextWidget("名字").top(30)
                     .left(10))
             .child(
                 createNameField().top(28)
-                    .left(58))
+                    .left(50))
             .child(
                 new TextWidget("X").top(54)
                     .left(10))
@@ -68,17 +70,17 @@ public class FakePlayerSpawnWindow extends ModularPanel {
                 createCoordinateField(() -> this.draft.z, val -> this.draft.z = val).top(52)
                     .left(148))
             .child(
-                new TextWidget("Dim").top(78)
+                new TextWidget("维度").top(78)
                     .left(10))
             .child(
                 createDimensionField().top(76)
-                    .left(36))
+                    .left(40))
             .child(
-                new TextWidget("Mode").top(78)
-                    .left(94))
+                new TextWidget("模式").top(78)
+                    .left(100))
             .child(
                 createGameModeField().top(76)
-                    .left(126))
+                    .left(132))
             .child(
                 createSpawnButton().top(104)
                     .left(10))
@@ -89,10 +91,11 @@ public class FakePlayerSpawnWindow extends ModularPanel {
     }
 
     private TextFieldWidget createNameField() {
-        return new TextFieldWidget()
-            .value(new StringSyncValue(() -> this.draft.botName, val -> this.draft.botName = val))
+        this.nameSyncValue = new StringSyncValue(() -> this.draft.botName, val -> this.draft.botName = val);
+        this.nameField = new TextFieldWidget().value(this.nameSyncValue)
             .setMaxLength(16)
             .size(120, 16);
+        return this.nameField;
     }
 
     private TextFieldWidget createCoordinateField(IntGetter getter, IntSetter setter) {
@@ -123,12 +126,18 @@ public class FakePlayerSpawnWindow extends ModularPanel {
 
     private ButtonWidget<?> createSpawnButton() {
         return new ButtonWidget<>().size(60, 18)
-            .overlay(IKey.str("Spawn"))
+            .overlay(IKey.str("生成"))
+            .onMousePressed(mouseButton -> {
+                if (mouseButton == 0 && this.nameField != null && this.nameSyncValue != null) {
+                    this.nameSyncValue.setStringValue(this.nameField.getText());
+                }
+                return true;
+            })
             .syncHandler(new InteractionSyncHandler().setOnMousePressed(mouseData -> {
                 if (mouseData.mouseButton != 0 || mouseData.isClient()) {
                     return;
                 }
-
+                this.statusMessage = "正在生成...";
                 FakePlayerManagerService.SpawnDraft snapshot = this.draft.copy();
                 try {
                     ServerThreadUtil.addScheduledTask(() -> {
