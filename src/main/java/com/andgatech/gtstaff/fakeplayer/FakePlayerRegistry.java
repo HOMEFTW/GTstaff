@@ -34,6 +34,9 @@ public class FakePlayerRegistry {
     private static final String REMINDER_INTERVAL_KEY = "ReminderInterval";
     private static final String MONSTER_REPELLING_KEY = "MonsterRepelling";
     private static final String MONSTER_REPEL_RANGE_KEY = "MonsterRepelRange";
+    private static final String FOLLOW_TARGET_KEY = "FollowTarget";
+    private static final String FOLLOW_RANGE_KEY = "FollowRange";
+    private static final String TELEPORT_RANGE_KEY = "TeleportRange";
 
     private static final Map<String, FakePlayer> fakePlayers = new HashMap<String, FakePlayer>();
     private static final Map<String, PersistedBotData> persistedBots = new HashMap<String, PersistedBotData>();
@@ -62,10 +65,14 @@ public class FakePlayerRegistry {
         private final int reminderInterval;
         private final boolean monsterRepelling;
         private final int monsterRepelRange;
+        private final UUID followTarget;
+        private final int followRange;
+        private final int teleportRange;
 
         private PersistedBotData(String name, UUID profileId, UUID ownerUUID, int dimension, double posX, double posY,
             double posZ, float yaw, float pitch, int gameTypeId, boolean flying, boolean monitoring, int monitorRange,
-            int reminderInterval, boolean monsterRepelling, int monsterRepelRange) {
+            int reminderInterval, boolean monsterRepelling, int monsterRepelRange, UUID followTarget, int followRange,
+            int teleportRange) {
             this.name = name;
             this.profileId = profileId;
             this.ownerUUID = ownerUUID;
@@ -82,6 +89,9 @@ public class FakePlayerRegistry {
             this.reminderInterval = reminderInterval;
             this.monsterRepelling = monsterRepelling;
             this.monsterRepelRange = monsterRepelRange;
+            this.followTarget = followTarget;
+            this.followRange = followRange;
+            this.teleportRange = teleportRange;
         }
 
         public String getName() {
@@ -146,6 +156,18 @@ public class FakePlayerRegistry {
 
         public int getMonsterRepelRange() {
             return this.monsterRepelRange;
+        }
+
+        public UUID getFollowTarget() {
+            return this.followTarget;
+        }
+
+        public int getFollowRange() {
+            return this.followRange;
+        }
+
+        public int getTeleportRange() {
+            return this.teleportRange;
         }
     }
 
@@ -241,6 +263,11 @@ public class FakePlayerRegistry {
             bot.setInteger(REMINDER_INTERVAL_KEY, data.getReminderInterval());
             bot.setBoolean(MONSTER_REPELLING_KEY, data.isMonsterRepelling());
             bot.setInteger(MONSTER_REPEL_RANGE_KEY, data.getMonsterRepelRange());
+            if (data.getFollowTarget() != null) {
+                bot.setString(FOLLOW_TARGET_KEY, data.getFollowTarget().toString());
+            }
+            bot.setInteger(FOLLOW_RANGE_KEY, data.getFollowRange());
+            bot.setInteger(TELEPORT_RANGE_KEY, data.getTeleportRange());
             botList.appendTag(bot);
         }
         root.setTag(ROOT_KEY, botList);
@@ -293,6 +320,12 @@ public class FakePlayerRegistry {
                 int reminderInterval = bot.hasKey(REMINDER_INTERVAL_KEY) ? bot.getInteger(REMINDER_INTERVAL_KEY) : 600;
                 boolean monsterRepelling = bot.hasKey(MONSTER_REPELLING_KEY) && bot.getBoolean(MONSTER_REPELLING_KEY);
                 int monsterRepelRange = bot.hasKey(MONSTER_REPEL_RANGE_KEY) ? bot.getInteger(MONSTER_REPEL_RANGE_KEY) : 64;
+                UUID followTarget = null;
+                if (bot.hasKey(FOLLOW_TARGET_KEY)) {
+                    followTarget = UUID.fromString(bot.getString(FOLLOW_TARGET_KEY));
+                }
+                int followRange = bot.hasKey(FOLLOW_RANGE_KEY) ? bot.getInteger(FOLLOW_RANGE_KEY) : FollowService.DEFAULT_FOLLOW_RANGE;
+                int teleportRange = bot.hasKey(TELEPORT_RANGE_KEY) ? bot.getInteger(TELEPORT_RANGE_KEY) : FollowService.DEFAULT_TELEPORT_RANGE;
 
                 persistedBots.put(
                     normalizedName,
@@ -312,7 +345,10 @@ public class FakePlayerRegistry {
                         monitorRange,
                         reminderInterval,
                         monsterRepelling,
-                        monsterRepelRange));
+                        monsterRepelRange,
+                        followTarget,
+                        followRange,
+                        teleportRange));
             }
         } catch (IOException e) {
             throw new IllegalStateException("Unable to load fake player registry from " + file.getAbsolutePath(), e);
@@ -344,6 +380,11 @@ public class FakePlayerRegistry {
             fakePlayer.setReminderInterval(data.getReminderInterval());
             fakePlayer.setMonsterRepelling(data.isMonsterRepelling());
             fakePlayer.setMonsterRepelRange(data.getMonsterRepelRange());
+            if (data.getFollowTarget() != null) {
+                fakePlayer.getFollowService().setFollowRange(data.getFollowRange());
+                fakePlayer.getFollowService().setTeleportRange(data.getTeleportRange());
+                fakePlayer.getFollowService().startFollowing(data.getFollowTarget());
+            }
             register(fakePlayer, data.getOwnerUUID());
         }
     }
@@ -360,6 +401,9 @@ public class FakePlayerRegistry {
             : fakePlayer.theItemInWorldManager.getGameType();
         int gameTypeId = gameType == null ? WorldSettings.GameType.SURVIVAL.getID() : gameType.getID();
         boolean flying = fakePlayer.capabilities != null && fakePlayer.capabilities.isFlying;
+        UUID followTarget = fakePlayer.isFollowing() ? fakePlayer.getFollowService().getFollowTargetUUID() : null;
+        int followRange = fakePlayer.getFollowService() != null ? fakePlayer.getFollowService().getFollowRange() : FollowService.DEFAULT_FOLLOW_RANGE;
+        int teleportRange = fakePlayer.getFollowService() != null ? fakePlayer.getFollowService().getTeleportRange() : FollowService.DEFAULT_TELEPORT_RANGE;
         return new PersistedBotData(
             fakePlayer.getCommandSenderName(),
             profileId,
@@ -376,6 +420,9 @@ public class FakePlayerRegistry {
             fakePlayer.getMonitorRange(),
             fakePlayer.getReminderInterval(),
             fakePlayer.isMonsterRepelling(),
-            fakePlayer.getMonsterRepelRange());
+            fakePlayer.getMonsterRepelRange(),
+            followTarget,
+            followRange,
+            teleportRange);
     }
 }

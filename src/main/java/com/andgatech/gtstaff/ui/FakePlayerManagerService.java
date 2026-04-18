@@ -18,6 +18,7 @@ import com.andgatech.gtstaff.GTstaff;
 import com.andgatech.gtstaff.command.CommandPlayer;
 import com.andgatech.gtstaff.fakeplayer.FakePlayer;
 import com.andgatech.gtstaff.fakeplayer.FakePlayerRegistry;
+import com.andgatech.gtstaff.fakeplayer.FollowService;
 import com.andgatech.gtstaff.util.PermissionHelper;
 
 public class FakePlayerManagerService {
@@ -183,10 +184,13 @@ public class FakePlayerManagerService {
         public final boolean online;
         public final boolean monsterRepelling;
         public final int monsterRepelRange;
+        public final boolean following;
+        public final int followRange;
+        public final int teleportRange;
 
         private BotDetails(String botName, String ownerLabel, int blockX, int blockY, int blockZ, int dimension,
             int selectedHotbarSlot, boolean monitoring, int monitorRange, int reminderInterval, boolean online,
-            boolean monsterRepelling, int monsterRepelRange) {
+            boolean monsterRepelling, int monsterRepelRange, boolean following, int followRange, int teleportRange) {
             this.botName = botName;
             this.ownerLabel = ownerLabel;
             this.blockX = blockX;
@@ -200,6 +204,9 @@ public class FakePlayerManagerService {
             this.online = online;
             this.monsterRepelling = monsterRepelling;
             this.monsterRepelRange = monsterRepelRange;
+            this.following = following;
+            this.followRange = followRange;
+            this.teleportRange = teleportRange;
         }
     }
 
@@ -339,6 +346,52 @@ public class FakePlayerManagerService {
         return "敌对生物驱逐范围已设置为 " + range + " 格 for " + normalizedBotName + ".";
     }
 
+    public String startFollow(ICommandSender sender, String botName) {
+        if (!(sender instanceof EntityPlayerMP player)) {
+            throw new CommandException("Only players can be followed");
+        }
+        String normalizedBotName = requireBotName(botName);
+        FakePlayer fakePlayer = findBot(normalizedBotName);
+        if (fakePlayer == null) {
+            throw new CommandException(buildOfflineBotMessage(normalizedBotName));
+        }
+        fakePlayer.getFollowService().startFollowing(player.getUniqueID());
+        return FakePlayer.colorizeName(normalizedBotName) + " 开始跟随你";
+    }
+
+    public String stopFollow(ICommandSender sender, String botName) {
+        String normalizedBotName = requireBotName(botName);
+        FakePlayer fakePlayer = findBot(normalizedBotName);
+        if (fakePlayer == null) {
+            throw new CommandException(buildOfflineBotMessage(normalizedBotName));
+        }
+        fakePlayer.getFollowService().stop();
+        fakePlayer.moveForward = 0.0F;
+        fakePlayer.moveStrafing = 0.0F;
+        fakePlayer.setJumping(false);
+        return FakePlayer.colorizeName(normalizedBotName) + " 停止跟随";
+    }
+
+    public String setFollowRange(ICommandSender sender, String botName, int range) {
+        String normalizedBotName = requireBotName(botName);
+        FakePlayer fakePlayer = findBot(normalizedBotName);
+        if (fakePlayer == null) {
+            throw new CommandException(buildOfflineBotMessage(normalizedBotName));
+        }
+        fakePlayer.getFollowService().setFollowRange(range);
+        return normalizedBotName + " 跟随距离设置为 " + range + " 格";
+    }
+
+    public String setTeleportRange(ICommandSender sender, String botName, int range) {
+        String normalizedBotName = requireBotName(botName);
+        FakePlayer fakePlayer = findBot(normalizedBotName);
+        if (fakePlayer == null) {
+            throw new CommandException(buildOfflineBotMessage(normalizedBotName));
+        }
+        fakePlayer.getFollowService().setTeleportRange(range);
+        return normalizedBotName + " 传送距离设置为 " + range + " 格";
+    }
+
     public String scanMachines(String botName) {
         FakePlayer fakePlayer = findBot(botName);
         if (fakePlayer == null) {
@@ -399,8 +452,14 @@ public class FakePlayerManagerService {
                 600,
                 false,
                 false,
-                64);
+                64,
+                false,
+                FollowService.DEFAULT_FOLLOW_RANGE,
+                FollowService.DEFAULT_TELEPORT_RANGE);
         }
+        boolean following = fakePlayer.isFollowing();
+        int followRange = fakePlayer.getFollowService() != null ? fakePlayer.getFollowService().getFollowRange() : FollowService.DEFAULT_FOLLOW_RANGE;
+        int teleportRange = fakePlayer.getFollowService() != null ? fakePlayer.getFollowService().getTeleportRange() : FollowService.DEFAULT_TELEPORT_RANGE;
         return new BotDetails(
             fakePlayer.getCommandSenderName(),
             formatOwnerLabel(fakePlayer.getOwnerUUID()),
@@ -414,7 +473,10 @@ public class FakePlayerManagerService {
             fakePlayer.getReminderInterval(),
             true,
             fakePlayer.isMonsterRepelling(),
-            fakePlayer.getMonsterRepelRange());
+            fakePlayer.getMonsterRepelRange(),
+            following,
+            followRange,
+            teleportRange);
     }
 
     public String openInventoryManager(EntityPlayerMP player, String botName) {
