@@ -32,7 +32,7 @@
 - `CommandPlayer`：支持 `/player list`
 - `CommandPlayer`：支持 `/player <name> spawn [at ...] [facing ...] [in ...] [as ...]`
 - `CommandPlayer`：支持 `/player <name> kill`、`shadow`、`monitor`
-- `CommandPlayer`：支持动作与控制子命令 `attack`、`use`、`jump`、`drop`、`dropStack`、`move`、`look`、`turn`、`sneak`、`unsneak`、`sprint`、`unsprint`、`mount`、`dismount`、`hotbar`、`stop`
+- `CommandPlayer`：支持动作与控制子命令 `attack`、`use`、`jump`、`drop`、`dropStack`、`move`、`look`、`turn`、`sneak`、`unsneak`、`sprint`、`unsprint`、`mount`、`dismount`、`hotbar`、`stop`、`follow`
 - `CommandGTstaff`：支持 `/gtstaff ui` 打开 `FakePlayerManagerUI`
 
 ### 监控相关
@@ -51,9 +51,22 @@
 - 假人移动时驱逐范围自动跟随（每次 CheckSpawn 实时检查当前坐标）
 - 驱逐状态通过 `FakePlayerRegistry` 持久化到 `data/gtstaff_registry.dat`
 
+### 假人跟随
+- `FollowService`：挂载在 `FakePlayer` 上，每 tick 在 `actionPack.onUpdate()` 之后、`runLivingUpdate()` 之前执行
+- `FollowService.tick()`：检查目标在线 → 维度检查 → 距离判断 → 飞行同步 → 方向计算 → Y 轴控制
+- 方向计算：`calculateMovement(fakeYaw, fromX, fromZ, toX, toZ)` 将目标方向转换为 moveForward / moveStrafing（基于 yaw 差的 cos/sin 分量）
+- Y 轴控制：空中时 `setJumping(true)` 上升、`motionY -= 0.1` 下降，阈值 0.5 格
+- 超距传送：距离 > teleportRange 时传送到玩家背后 2 格
+- 跨维度传送：维度不同时等待 100 tick（5 秒），聊天栏通知玩家，计时结束后跨维度传送
+- 飞行同步：跟随时自动将 `fakePlayer.capabilities.isFlying` 同步为目标玩家的飞行状态
+- 参数：followRange（默认 3 格）、teleportRange（默认 32 格），可通过命令和 UI 调节
+- 命令：`/player <name> follow [player|stop|range <n>|tprange <n>]`
+- UI：Other 页签新增"跟随我"/"停止跟随"按钮 + 跟随距离和传送距离按钮组
+- 持久化：followTarget（UUID）、followRange、teleportRange 写入 `data/gtstaff_registry.dat`；重启后自动恢复跟随
+
 ### 持久化
 - `FakePlayerRegistry`：支持大小写不敏感查询、按 owner 计数、`save(File)`、`load(File)`、`restorePersisted(...)`
-- `data/gtstaff_registry.dat`：当前保存 bot 名称、`profileId`、`owner UUID`、维度、坐标、朝向、游戏模式、飞行状态、监控开关、监控半径、提醒频率、驱逐开关与驱逐范围
+- `data/gtstaff_registry.dat`：当前保存 bot 名称、`profileId`、`owner UUID`、维度、坐标、朝向、游戏模式、飞行状态、监控开关、监控半径、提醒频率、驱逐开关、驱逐范围、跟随目标、跟随距离、传送距离
 - `CommonProxy`：在 `serverStarted` 加载并恢复 fake player，在 `serverStopping` 保存 registry
 
 ### UI
@@ -134,5 +147,7 @@
 - 当前已完成自动化 smoke test，但游戏内人工烟测仍待在可启动客户端/服务端的环境中补做
 - `./gradlew.bat --offline build` 当前会在 `spotlessJavaCheck` 因 CRLF/LF 格式差异失败，但不影响 `assemble`、`test`、`compileJava` 与 reobf jar 产出
 - 当前 Gradle 在线解析 `gtnhgradle:1.+` 偶发 TLS 握手失败，验证命令优先使用 `--offline`
+- `FollowService.tick()` 在 `actionPack.onUpdate()` 之后执行，覆盖 actionPack 设置的 moveForward/moveStrafing；跟随优先级高于手动 move 命令
+- 跨维度传送通过手动将假人从旧世界移除、在新世界 spawn 实现，不走 `transferPlayerToDimension`
 
 
