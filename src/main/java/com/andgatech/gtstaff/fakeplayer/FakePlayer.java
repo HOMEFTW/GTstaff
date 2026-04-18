@@ -22,6 +22,7 @@ public class FakePlayer extends EntityPlayerMP {
 
     private UUID ownerUUID;
     private final MachineMonitorService machineMonitorService;
+    private final FollowService followService = new FollowService(this);
     private boolean disconnected;
     private boolean monsterRepelling;
     private int monsterRepelRange = 64;
@@ -161,6 +162,7 @@ public class FakePlayer extends EntityPlayerMP {
         // but before onLivingUpdate() which consumes them for EntityLivingBase movement.
         ((IFakePlayerHolder) this).getActionPack()
             .onUpdate();
+        this.followService.tick();
         // EntityPlayerMP.onUpdate() does not advance the living movement path.
         // Fake players have no client packets, so we manually run the living update,
         // but avoid onUpdateEntity() because it would trigger EntityPlayer.onUpdate()
@@ -253,6 +255,14 @@ public class FakePlayer extends EntityPlayerMP {
 
     public void setMonsterRepelRange(int range) {
         this.monsterRepelRange = range;
+    }
+
+    public FollowService getFollowService() {
+        return this.followService;
+    }
+
+    public boolean isFollowing() {
+        return this.followService.isFollowing();
     }
 
     private static final EnumChatFormatting[] BOT_COLORS = { EnumChatFormatting.GREEN, EnumChatFormatting.AQUA,
