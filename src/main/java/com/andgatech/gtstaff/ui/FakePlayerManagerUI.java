@@ -413,13 +413,14 @@ public class FakePlayerManagerUI extends AbstractUIFactory<GuiData> {
         private Column buildOtherPage(FakePlayerManagerService service, ManagerState state, EntityPlayerMP player) {
             Column col = new Column();
 
+            // ===== Row 1: Monster Repel (full width) =====
             col.child(
                 new TextWidget("敌对生物驱逐器").top(2)
                     .left(2)
-                    .size(120, 14));
+                    .size(100, 12));
 
             col.child(
-                new ButtonWidget<>().size(80, 18)
+                new ButtonWidget<>().size(70, 14)
                     .overlay(IKey.dynamic(() -> {
                         if (!hasSelectedBot(service, state)) return "驱逐: 关";
                         FakePlayerManagerService.BotDetails d = service.describeBot(state.selectedBotName);
@@ -439,24 +440,21 @@ public class FakePlayerManagerUI extends AbstractUIFactory<GuiData> {
                         }
                     }))
                     .setEnabledIf(w -> hasSelectedBot(service, state))
-                    .top(20)
+                    .top(16)
                     .left(2));
 
-            // Range display
             col.child(
                 new TextWidget(IKey.dynamic(() -> {
                     if (!hasSelectedBot(service, state)) return "范围: -";
                     FakePlayerManagerService.BotDetails d = service.describeBot(state.selectedBotName);
                     return "范围: " + d.monsterRepelRange + "格";
-                })).top(20)
-                    .left(88)
-                    .size(80, 14));
+                })).top(16)
+                    .left(76)
+                    .size(70, 12));
 
-            // Range buttons
             String[] rangeLabels = { "32", "64", "128", "256", "400" };
             int[] rangeValues = { 32, 64, 128, 256, 400 };
             for (int i = 0; i < rangeLabels.length; i++) {
-                final int idx = i;
                 final int range = rangeValues[i];
                 final String label = rangeLabels[i];
                 col.child(
@@ -479,34 +477,28 @@ public class FakePlayerManagerUI extends AbstractUIFactory<GuiData> {
                             }
                         }))
                         .setEnabledIf(w -> hasSelectedBot(service, state))
-                        .top(40)
-                        .left(2 + idx * 40));
+                        .top(32)
+                        .left(2 + i * 38));
             }
 
-            // Description text
+            // ===== Separator =====
             col.child(
-                new TextWidget(IKey.dynamic(() -> {
-                    if (!hasSelectedBot(service, state)) return "选择假人以查看驱逐状态。";
-                    FakePlayerManagerService.BotDetails d = service.describeBot(state.selectedBotName);
-                    if (!d.monsterRepelling) return "驱逐器已关闭。\n开启后将阻止假人附近\n敌对生物的生成。";
-                    return "驱逐器运行中。\n以假人为中心 " + d.monsterRepelRange
-                        + " 格球形范围内\n阻止敌对生物生成。\n假人移动时范围自动跟随。";
-                })).top(58)
+                new TextWidget("──────────────────────────────").top(48)
                     .left(2)
-                    .size(280, 60));
+                    .size(290, 10));
 
-            // ---- Follow Section ----
+            // ===== Row 2: Follow (full width) =====
             col.child(
-                new TextWidget("假人跟随").top(2)
-                    .left(150)
-                    .size(80, 14));
+                new TextWidget("假人跟随").top(56)
+                    .left(2)
+                    .size(60, 12));
 
             col.child(
-                new ButtonWidget<>().size(60, 18)
+                new ButtonWidget<>().size(52, 14)
                     .overlay(IKey.dynamic(() -> {
                         if (!hasSelectedBot(service, state)) return "跟随我";
                         FakePlayerManagerService.BotDetails d = service.describeBot(state.selectedBotName);
-                        return d.following ? "跟随中..." : "跟随我";
+                        return d.following ? "跟随中" : "跟随我";
                     }))
                     .syncHandler(new InteractionSyncHandler().setOnMousePressed(mouseData -> {
                         if (mouseData.mouseButton != 0 || mouseData.isClient()) return;
@@ -521,11 +513,11 @@ public class FakePlayerManagerUI extends AbstractUIFactory<GuiData> {
                         }
                     }))
                     .setEnabledIf(w -> hasSelectedBot(service, state))
-                    .top(18)
-                    .left(150));
+                    .top(70)
+                    .left(2));
 
             col.child(
-                new ButtonWidget<>().size(60, 18)
+                new ButtonWidget<>().size(52, 14)
                     .overlay(IKey.str("停止跟随"))
                     .syncHandler(new InteractionSyncHandler().setOnMousePressed(mouseData -> {
                         if (mouseData.mouseButton != 0 || mouseData.isClient()) return;
@@ -540,14 +532,14 @@ public class FakePlayerManagerUI extends AbstractUIFactory<GuiData> {
                         }
                     }))
                     .setEnabledIf(w -> hasSelectedBot(service, state))
-                    .top(18)
-                    .left(214));
+                    .top(70)
+                    .left(58));
 
-            // Follow range buttons
+            // Follow range
             col.child(
-                new TextWidget("跟随距离:").top(40)
-                    .left(150)
-                    .size(50, 14));
+                new TextWidget("跟随:").top(70)
+                    .left(116)
+                    .size(26, 12));
 
             String[] followRangeLabels = { "1", "3", "5", "8", "10" };
             int[] followRangeValues = { 1, 3, 5, 8, 10 };
@@ -555,7 +547,7 @@ public class FakePlayerManagerUI extends AbstractUIFactory<GuiData> {
                 final int range = followRangeValues[i];
                 final String label = followRangeLabels[i];
                 col.child(
-                    new ButtonWidget<>().size(22, 14)
+                    new ButtonWidget<>().size(20, 14)
                         .overlay(IKey.dynamic(() -> {
                             if (!hasSelectedBot(service, state)) return label;
                             FakePlayerManagerService.BotDetails d = service.describeBot(state.selectedBotName);
@@ -574,15 +566,15 @@ public class FakePlayerManagerUI extends AbstractUIFactory<GuiData> {
                             }
                         }))
                         .setEnabledIf(w -> hasSelectedBot(service, state))
-                        .top(56)
-                        .left(150 + i * 24));
+                        .top(70)
+                        .left(144 + i * 22));
             }
 
-            // Teleport range buttons
+            // Teleport range
             col.child(
-                new TextWidget("传送距离:").top(72)
-                    .left(150)
-                    .size(50, 14));
+                new TextWidget("传送:").top(86)
+                    .left(2)
+                    .size(26, 12));
 
             String[] tpRangeLabels = { "16", "32", "64", "96", "128" };
             int[] tpRangeValues = { 16, 32, 64, 96, 128 };
@@ -609,20 +601,28 @@ public class FakePlayerManagerUI extends AbstractUIFactory<GuiData> {
                             }
                         }))
                         .setEnabledIf(w -> hasSelectedBot(service, state))
-                        .top(88)
-                        .left(150 + i * 26));
+                        .top(86)
+                        .left(30 + i * 26));
             }
 
-            // Follow status text
+            // Status text
             col.child(
                 new TextWidget(IKey.dynamic(() -> {
-                    if (!hasSelectedBot(service, state)) return "选择假人以查看跟随状态。";
+                    if (!hasSelectedBot(service, state)) return "选择假人以查看状态。";
                     FakePlayerManagerService.BotDetails d = service.describeBot(state.selectedBotName);
-                    if (!d.following) return "未跟随。\n点击\"跟随我\"让假人跟随你。";
-                    return "跟随中。\n跟随距离: " + d.followRange + " 格\n传送距离: " + d.teleportRange + " 格";
-                })).top(106)
-                    .left(150)
-                    .size(140, 40));
+                    StringBuilder sb = new StringBuilder();
+                    if (d.monsterRepelling) {
+                        sb.append("驱逐中(").append(d.monsterRepelRange).append("格) ");
+                    }
+                    if (d.following) {
+                        sb.append("跟随中 距离:").append(d.followRange).append(" 传送:").append(d.teleportRange);
+                    } else {
+                        sb.append("未跟随");
+                    }
+                    return sb.toString();
+                })).top(104)
+                    .left(2)
+                    .size(290, 30));
 
             return col;
         }

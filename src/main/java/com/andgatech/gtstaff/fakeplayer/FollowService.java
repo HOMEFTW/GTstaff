@@ -85,11 +85,18 @@ public class FollowService {
         boolean isAirborne = !fakePlayer.onGround || fakePlayer.capabilities.isFlying;
         if (isAirborne) {
             if (shouldJump(fakePlayer.posY, target.posY, fakePlayer.capabilities.isFlying)) {
-                fakePlayer.setJumping(true);
+                if (fakePlayer.capabilities.isFlying) {
+                    fakePlayer.motionY = Math.min(fakePlayer.motionY + 0.2D, 0.8D);
+                } else {
+                    fakePlayer.setJumping(true);
+                }
             } else if (fakePlayer.capabilities.isFlying && shouldDescend(fakePlayer.posY, target.posY, fakePlayer.capabilities.isFlying)) {
-                fakePlayer.motionY = Math.max(fakePlayer.motionY - 0.1D, -0.5D);
+                fakePlayer.motionY = Math.max(fakePlayer.motionY - 0.2D, -0.8D);
             } else {
                 fakePlayer.setJumping(false);
+                if (fakePlayer.capabilities.isFlying && Math.abs(target.posY - fakePlayer.posY) <= Y_THRESHOLD) {
+                    fakePlayer.motionY *= 0.5D;
+                }
             }
         }
     }
