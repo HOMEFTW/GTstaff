@@ -1,6 +1,6 @@
 # GTstaff
 
-GTNH (GregTech New Horizons) 服务器端假人管理模组。允许玩家在服务器中生成和管理假人（Fake Player），用于自动化操作、机器监控、物品管理等场景。
+GTNH (GregTech New Horizons) 服务器端假人管理模组。允许玩家在服务器中生成和管理假人（Fake Player）
 
 ## 功能概览
 
