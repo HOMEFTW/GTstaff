@@ -302,7 +302,8 @@ public class CommandPlayer extends CommandBase {
                     scan = true;
                     break;
                 default:
-                    throw new WrongUsageException("/player <name> monitor [on|off] [range <radius>] [interval <ticks>] [scan]");
+                    throw new WrongUsageException(
+                        "/player <name> monitor [on|off] [range <radius>] [interval <ticks>] [scan]");
             }
         }
 
@@ -819,7 +820,8 @@ public class CommandPlayer extends CommandBase {
     }
 
     private void notifySenderLines(ICommandSender sender, String message) {
-        if (message == null || message.trim().isEmpty()) {
+        if (message == null || message.trim()
+            .isEmpty()) {
             return;
         }
 
