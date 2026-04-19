@@ -5,6 +5,12 @@ plugins {
     id 'com.gtnewhorizons.gtnhconvention'
 }
 
+afterEvaluate {
+    if (project.hasProperty('modVersion')) {
+        project.version = project.property('modVersion')
+    }
+}
+
 minecraft {
     extraRunJvmArguments.add("-Xmx4G")
     extraRunJvmArguments.add("-Xms4G")
