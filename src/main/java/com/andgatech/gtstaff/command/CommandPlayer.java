@@ -1,9 +1,14 @@
 package com.andgatech.gtstaff.command;
 
+import java.io.File;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 import net.minecraft.command.CommandBase;
@@ -11,6 +16,7 @@ import net.minecraft.command.CommandException;
 import net.minecraft.command.ICommandSender;
 import net.minecraft.command.WrongUsageException;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.ChatComponentText;
@@ -18,7 +24,9 @@ import net.minecraft.util.ChunkCoordinates;
 import net.minecraft.util.MathHelper;
 import net.minecraft.world.WorldServer;
 import net.minecraft.world.WorldSettings;
+import net.minecraftforge.common.DimensionManager;
 
+import com.andgatech.gtstaff.GTstaff;
 import com.andgatech.gtstaff.config.Config;
 import com.andgatech.gtstaff.fakeplayer.Action;
 import com.andgatech.gtstaff.fakeplayer.ActionType;
@@ -27,8 +35,12 @@ import com.andgatech.gtstaff.fakeplayer.FakePlayer;
 import com.andgatech.gtstaff.fakeplayer.FakePlayerRegistry;
 import com.andgatech.gtstaff.fakeplayer.FollowService;
 import com.andgatech.gtstaff.fakeplayer.IFakePlayerHolder;
+import com.andgatech.gtstaff.fakeplayer.MachineMonitorService;
 import com.andgatech.gtstaff.fakeplayer.PlayerActionPack;
+import com.andgatech.gtstaff.ui.FakePlayerInventoryGuiIds;
 import com.andgatech.gtstaff.util.PermissionHelper;
+import com.andgatech.gtstaff.util.PlayerDataCleanup;
+import com.mojang.authlib.GameProfile;
 
 public class CommandPlayer extends CommandBase {
 
@@ -39,7 +51,7 @@ public class CommandPlayer extends CommandBase {
 
     @Override
     public String getCommandUsage(ICommandSender sender) {
-        return "/player <name> spawn|kill|shadow|attack|use|jump|drop|dropStack|move|look|turn|sneak|unsneak|sprint|unsprint|mount|dismount|hotbar|stop|monitor|follow [player|stop|range <n>|tprange <n>] ...";
+        return "/player <name> spawn|kill|purge|shadow|attack|stopattack|use|stopuse|jump|drop|dropStack|move|look|turn|sneak|unsneak|sprint|unsprint|mount|dismount|hotbar|stop|monitor|repel|inventory|follow [player|stop|range <n>|tprange <n>] ...";
     }
 
     @Override
@@ -74,11 +86,20 @@ public class CommandPlayer extends CommandBase {
             case "kill":
                 handleKill(sender, botName);
                 return;
+            case "purge":
+                handlePurge(sender, botName);
+                return;
             case "shadow":
                 handleShadow(sender, botName);
                 return;
             case "monitor":
                 handleMonitor(sender, botName, trailingArgs);
+                return;
+            case "repel":
+                handleRepel(sender, botName, trailingArgs);
+                return;
+            case "inventory":
+                handleInventory(sender, botName, trailingArgs);
                 return;
             case "follow":
                 handleFollow(sender, botName, trailingArgs);
@@ -185,6 +206,39 @@ public class CommandPlayer extends CommandBase {
         notifySender(sender, "Killed fake player " + target.getCommandSenderName());
     }
 
+    protected void handlePurge(ICommandSender sender, String botName) {
+        FakePlayer target = FakePlayerRegistry.getFakePlayer(botName);
+        if (target != null) {
+            String targetName = target.getCommandSenderName();
+            UUID profileId = resolveProfileId(targetName, target);
+            if (PermissionHelper.cantRemove(sender, target)) {
+                throw new CommandException("You do not have permission to remove that bot");
+            }
+            if (target.playerNetServerHandler instanceof FakeNetHandlerPlayServer) {
+                target.playerNetServerHandler.kickPlayerFromServer("You logged in from another location");
+            } else {
+                FakePlayerRegistry.unregister(targetName);
+            }
+            purgeSavedPlayerFiles(requireServer(), targetName, profileId);
+            FakePlayerRegistry.saveServerRegistry(requireServer());
+            notifySender(sender, "Purged fake player " + targetName);
+            return;
+        }
+
+        if (!FakePlayerRegistry.contains(botName)) {
+            throw new CommandException("Fake player not found: " + botName);
+        }
+        if (cantRemovePersisted(sender, botName)) {
+            throw new CommandException("You do not have permission to remove that bot");
+        }
+
+        UUID profileId = resolveProfileId(botName, null);
+        FakePlayerRegistry.unregister(botName);
+        purgeSavedPlayerFiles(requireServer(), botName, profileId);
+        FakePlayerRegistry.saveServerRegistry(requireServer());
+        notifySender(sender, "Purged fake player " + botName);
+    }
+
     protected void handleShadow(ICommandSender sender, String botName) {
         MinecraftServer server = requireServer();
         EntityPlayerMP realPlayer = getPlayer(sender, botName);
@@ -219,18 +273,14 @@ public class CommandPlayer extends CommandBase {
         }
 
         if (args.length == 0) {
-            notifySender(
-                sender,
-                "Monitor for " + target.getCommandSenderName()
-                    + ": "
-                    + (target.isMonitoring() ? "on" : "off")
-                    + ", range="
-                    + target.getMonitorRange());
+            notifySender(sender, buildMonitorStatus(target));
             return;
         }
 
         Boolean monitoring = null;
         Integer range = null;
+        Integer interval = null;
+        boolean scan = false;
         for (int index = 0; index < args.length; index++) {
             String token = args[index].toLowerCase(Locale.ROOT);
             switch (token) {
@@ -244,8 +294,15 @@ public class CommandPlayer extends CommandBase {
                     ensureRemaining(args, index, 1, sender);
                     range = parseIntWithMin(sender, args[++index], 1);
                     break;
+                case "interval":
+                    ensureRemaining(args, index, 1, sender);
+                    interval = parseIntWithMin(sender, args[++index], 60);
+                    break;
+                case "scan":
+                    scan = true;
+                    break;
                 default:
-                    throw new WrongUsageException("/player <name> monitor [on|off] [range <radius>]");
+                    throw new WrongUsageException("/player <name> monitor [on|off] [range <radius>] [interval <ticks>] [scan]");
             }
         }
 
@@ -255,14 +312,85 @@ public class CommandPlayer extends CommandBase {
         if (range != null) {
             target.setMonitorRange(range);
         }
+        if (interval != null) {
+            target.setReminderInterval(interval);
+        }
 
-        notifySender(
-            sender,
-            "Monitor for " + target.getCommandSenderName()
-                + ": "
-                + (target.isMonitoring() ? "on" : "off")
-                + ", range="
-                + target.getMonitorRange());
+        notifySender(sender, buildMonitorStatus(target));
+        if (scan) {
+            sendMachineOverview(sender, target);
+        }
+    }
+
+    protected void handleRepel(ICommandSender sender, String botName, String[] args) {
+        FakePlayer target = requireFakePlayer(botName);
+        if (PermissionHelper.cantManipulate(sender, target)) {
+            throw new CommandException("You do not have permission to control that bot");
+        }
+
+        if (args.length == 0) {
+            notifySender(sender, buildRepelStatus(target));
+            return;
+        }
+
+        Boolean repelling = null;
+        Integer range = null;
+        for (int index = 0; index < args.length; index++) {
+            String token = args[index].toLowerCase(Locale.ROOT);
+            switch (token) {
+                case "on":
+                    repelling = true;
+                    break;
+                case "off":
+                    repelling = false;
+                    break;
+                case "range":
+                    ensureRemaining(args, index, 1, sender);
+                    range = parseIntWithMin(sender, args[++index], 1);
+                    break;
+                default:
+                    throw new WrongUsageException("/player <name> repel [on|off] [range <radius>]");
+            }
+        }
+
+        if (repelling != null) {
+            target.setMonsterRepelling(repelling);
+        }
+        if (range != null) {
+            target.setMonsterRepelRange(range);
+        }
+
+        notifySender(sender, buildRepelStatus(target));
+    }
+
+    protected void handleInventory(ICommandSender sender, String botName, String[] args) {
+        FakePlayer target = requireFakePlayer(botName);
+        if (PermissionHelper.cantManipulate(sender, target)) {
+            throw new CommandException("You do not have permission to control that bot");
+        }
+
+        if (args.length == 0 || "summary".equalsIgnoreCase(args[0])) {
+            notifySenderLines(sender, buildInventorySummary(target));
+            return;
+        }
+
+        if (args.length == 1 && "open".equalsIgnoreCase(args[0])) {
+            if (!(sender instanceof EntityPlayerMP player)) {
+                throw new CommandException("Inventory manager can only be opened by a player");
+            }
+
+            player.openGui(
+                GTstaff.instance,
+                FakePlayerInventoryGuiIds.FAKE_PLAYER_INVENTORY,
+                player.worldObj,
+                target.getEntityId(),
+                0,
+                0);
+            notifySender(sender, "Opening inventory manager for " + target.getCommandSenderName() + ".");
+            return;
+        }
+
+        throw new WrongUsageException("/player <name> inventory [open|summary]");
     }
 
     protected void handleFollow(ICommandSender sender, String botName, String[] args) {
@@ -310,7 +438,10 @@ public class CommandPlayer extends CommandBase {
             default:
                 EntityPlayerMP followTarget = getPlayer(sender, args[0]);
                 followService.startFollowing(followTarget.getUniqueID());
-                notifySender(sender, FakePlayer.colorizeName(target.getCommandSenderName()) + " 开始跟随 " + followTarget.getCommandSenderName());
+                notifySender(
+                    sender,
+                    FakePlayer.colorizeName(target.getCommandSenderName()) + " 开始跟随 "
+                        + followTarget.getCommandSenderName());
                 return;
         }
     }
@@ -559,6 +690,79 @@ public class CommandPlayer extends CommandBase {
         return holder.getActionPack();
     }
 
+    private boolean cantRemovePersisted(ICommandSender sender, String botName) {
+        if (!(sender instanceof EntityPlayerMP player)) {
+            return false;
+        }
+        if (player.canCommandSenderUseCommand(Config.fakePlayerPermissionLevel, "gtstaff")) {
+            return false;
+        }
+        return !player.getUniqueID()
+            .equals(FakePlayerRegistry.getOwnerUUID(botName));
+    }
+
+    private void purgeSavedPlayerFiles(MinecraftServer server, String botName, UUID profileId) {
+        for (File saveRoot : getSaveRootsForCleanup(server)) {
+            PlayerDataCleanup.purgeBotFiles(saveRoot, botName, profileId);
+        }
+    }
+
+    private UUID resolveProfileId(String botName, FakePlayer target) {
+        if (target != null && target.getGameProfile() != null
+            && target.getGameProfile()
+                .getId() != null) {
+            return target.getGameProfile()
+                .getId();
+        }
+        UUID profileId = FakePlayerRegistry.getProfileId(botName);
+        if (profileId != null) {
+            return profileId;
+        }
+        String normalizedBotName = botName == null ? "" : botName.trim();
+        return normalizedBotName.isEmpty() ? null
+            : EntityPlayer.func_146094_a(new GameProfile(null, normalizedBotName));
+    }
+
+    protected java.io.File resolveSaveRoot(MinecraftServer server) {
+        java.io.File overworldSaveRoot = getOverworldSaveRoot(server);
+        if (overworldSaveRoot != null) {
+            return overworldSaveRoot;
+        }
+        java.io.File currentSaveRoot = getCurrentSaveRootDirectory();
+        return currentSaveRoot != null ? currentSaveRoot : getFallbackSaveRoot(server);
+    }
+
+    protected List<File> getSaveRootsForCleanup(MinecraftServer server) {
+        Set<File> roots = new LinkedHashSet<File>();
+        File resolvedRoot = resolveSaveRoot(server);
+        if (resolvedRoot != null) {
+            roots.add(resolvedRoot);
+        }
+        File fallbackRoot = getFallbackSaveRoot(server);
+        if (fallbackRoot != null) {
+            roots.add(fallbackRoot);
+        }
+        return new ArrayList<File>(roots);
+    }
+
+    protected java.io.File getCurrentSaveRootDirectory() {
+        return DimensionManager.getCurrentSaveRootDirectory();
+    }
+
+    protected java.io.File getOverworldSaveRoot(MinecraftServer server) {
+        if (server == null) {
+            return null;
+        }
+        WorldServer overworld = server.worldServerForDimension(0);
+        return overworld == null ? null : overworld.getChunkSaveLocation();
+    }
+
+    protected java.io.File getFallbackSaveRoot(MinecraftServer server) {
+        java.io.File playerdataDirectory = server == null ? null : server.getFile("playerdata");
+        java.io.File parent = playerdataDirectory == null ? null : playerdataDirectory.getParentFile();
+        return parent == null && server != null ? server.getFile(".") : parent;
+    }
+
     private MinecraftServer requireServer() {
         MinecraftServer server = MinecraftServer.getServer();
         if (server == null) {
@@ -612,6 +816,104 @@ public class CommandPlayer extends CommandBase {
         if (sender != null) {
             sender.addChatMessage(new ChatComponentText("[GTstaff] " + message));
         }
+    }
+
+    private void notifySenderLines(ICommandSender sender, String message) {
+        if (message == null || message.trim().isEmpty()) {
+            return;
+        }
+
+        for (String line : message.split("\\r?\\n")) {
+            String trimmed = line == null ? "" : line.trim();
+            if (!trimmed.isEmpty()) {
+                notifySender(sender, trimmed);
+            }
+        }
+    }
+
+    private String buildMonitorStatus(FakePlayer target) {
+        return "Monitor for " + target.getCommandSenderName()
+            + ": "
+            + (target.isMonitoring() ? "on" : "off")
+            + ", range="
+            + target.getMonitorRange()
+            + ", interval="
+            + target.getReminderInterval()
+            + " ticks";
+    }
+
+    private String buildRepelStatus(FakePlayer target) {
+        return "Repel for " + target.getCommandSenderName()
+            + ": "
+            + (target.isMonsterRepelling() ? "on" : "off")
+            + ", range="
+            + target.getMonsterRepelRange();
+    }
+
+    private void sendMachineOverview(ICommandSender sender, FakePlayer target) {
+        MachineMonitorService monitorService = target.getMachineMonitorService();
+        if (monitorService == null) {
+            notifySender(sender, "Monitor service is unavailable for " + target.getCommandSenderName());
+            return;
+        }
+        notifySenderLines(sender, monitorService.buildOverviewMessage(target.getCommandSenderName()));
+    }
+
+    private String buildInventorySummary(FakePlayer target) {
+        StringBuilder summary = new StringBuilder();
+        summary.append("Inventory for ")
+            .append(target.getCommandSenderName())
+            .append('\n');
+        if (target.inventory == null) {
+            summary.append("Inventory data is unavailable.");
+            return summary.toString();
+        }
+
+        summary.append("Selected hotbar slot: ")
+            .append(MathHelper.clamp_int(target.inventory.currentItem, 0, 8) + 1)
+            .append('\n');
+        summary.append("Hotbar: ")
+            .append(formatInventoryRange(target.inventory.mainInventory, 0, 8))
+            .append('\n');
+        summary.append("Main: ")
+            .append(formatInventoryRange(target.inventory.mainInventory, 9, target.inventory.mainInventory.length - 1))
+            .append('\n');
+        summary.append("Armor: ")
+            .append(formatArmorSummary(target));
+        return summary.toString();
+    }
+
+    private String formatInventoryRange(net.minecraft.item.ItemStack[] stacks, int start, int end) {
+        if (stacks == null || stacks.length == 0 || start >= stacks.length || end < start) {
+            return "(empty)";
+        }
+
+        List<String> entries = new ArrayList<String>();
+        int clampedEnd = Math.min(end, stacks.length - 1);
+        for (int index = start; index <= clampedEnd; index++) {
+            entries.add((index + 1) + ":" + formatStack(stacks[index]));
+        }
+        return String.join(", ", entries);
+    }
+
+    private String formatArmorSummary(FakePlayer target) {
+        if (target.inventory == null || target.inventory.armorInventory == null) {
+            return "(empty)";
+        }
+
+        String[] labels = { "boots", "leggings", "chestplate", "helmet" };
+        List<String> entries = new ArrayList<String>();
+        for (int index = 0; index < labels.length; index++) {
+            entries.add(labels[index] + ":" + formatStack(target.inventory.armorInventory[index]));
+        }
+        return String.join(", ", entries);
+    }
+
+    private String formatStack(net.minecraft.item.ItemStack stack) {
+        if (stack == null) {
+            return "-";
+        }
+        return stack.getDisplayName() + " x" + stack.stackSize;
     }
 
     private String formatPosition(FakePlayer fakePlayer) {

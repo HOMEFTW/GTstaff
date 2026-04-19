@@ -23,7 +23,8 @@ public class MonsterRepellentService {
         double spawnY = event.entity.posY;
         double spawnZ = event.entity.posZ;
 
-        for (FakePlayer fp : FakePlayerRegistry.getAll().values()) {
+        for (FakePlayer fp : FakePlayerRegistry.getAll()
+            .values()) {
             if (!fp.isMonsterRepelling()) continue;
             if (fp.dimension != dim) continue;
             int range = fp.getMonsterRepelRange();

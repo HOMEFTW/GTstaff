@@ -7,7 +7,6 @@ import com.cleanroommc.modularui.api.drawable.IKey;
 import com.cleanroommc.modularui.drawable.Rectangle;
 import com.cleanroommc.modularui.screen.ModularPanel;
 import com.cleanroommc.modularui.value.sync.IntSyncValue;
-import com.cleanroommc.modularui.value.sync.InteractionSyncHandler;
 import com.cleanroommc.modularui.value.sync.PanelSyncManager;
 import com.cleanroommc.modularui.value.sync.StringSyncValue;
 import com.cleanroommc.modularui.widgets.ButtonWidget;
@@ -20,9 +19,16 @@ public class FakePlayerSpawnWindow extends ModularPanel {
     private final FakePlayerManagerService service;
     private final EntityPlayerMP player;
     private final FakePlayerManagerService.SpawnDraft draft;
-    private String statusMessage = "填写表单后点击生成";
+    private String statusMessage = "Fill out the form, then click Spawn.";
+    private String pendingSpawnRequest = "";
+
     private TextFieldWidget nameField;
-    private StringSyncValue nameSyncValue;
+    private TextFieldWidget xField;
+    private TextFieldWidget yField;
+    private TextFieldWidget zField;
+    private TextFieldWidget dimensionField;
+    private TextFieldWidget gameModeField;
+    private StringSyncValue spawnRequestSyncValue;
 
     public FakePlayerSpawnWindow(ModularPanel parent, EntityPlayerMP player, PanelSyncManager syncManager) {
         this(parent, player, syncManager, new FakePlayerManagerService());
@@ -38,15 +44,21 @@ public class FakePlayerSpawnWindow extends ModularPanel {
         syncManager.syncValue(
             "gtstaffSpawnStatus",
             new StringSyncValue(() -> this.statusMessage, val -> this.statusMessage = val));
+        this.spawnRequestSyncValue = new StringSyncValue(
+            () -> this.pendingSpawnRequest,
+            val -> this.pendingSpawnRequest = val,
+            () -> this.pendingSpawnRequest,
+            this::handleSpawnRequest);
+        syncManager.syncValue("gtstaffSpawnRequest", this.spawnRequestSyncValue);
 
         PopupPanelLayout.centerInParent(this, parent, 190, 140)
             .background(new Rectangle().setColor(0xDD404040))
             .child(ButtonWidget.panelCloseButton())
             .child(
-                new TextWidget("生成假人").top(10)
+                new TextWidget("Generate Fake Player").top(10)
                     .left(10))
             .child(
-                new TextWidget("名字").top(30)
+                new TextWidget("Name").top(30)
                     .left(10))
             .child(
                 createNameField().top(28)
@@ -55,28 +67,28 @@ public class FakePlayerSpawnWindow extends ModularPanel {
                 new TextWidget("X").top(54)
                     .left(10))
             .child(
-                createCoordinateField(() -> this.draft.x, val -> this.draft.x = val).top(52)
+                createXField().top(52)
                     .left(24))
             .child(
                 new TextWidget("Y").top(54)
                     .left(72))
             .child(
-                createCoordinateField(() -> this.draft.y, val -> this.draft.y = val).top(52)
+                createYField().top(52)
                     .left(86))
             .child(
                 new TextWidget("Z").top(54)
                     .left(134))
             .child(
-                createCoordinateField(() -> this.draft.z, val -> this.draft.z = val).top(52)
+                createZField().top(52)
                     .left(148))
             .child(
-                new TextWidget("维度").top(78)
+                new TextWidget("Dim").top(78)
                     .left(10))
             .child(
                 createDimensionField().top(76)
                     .left(40))
             .child(
-                new TextWidget("模式").top(78)
+                new TextWidget("Mode").top(78)
                     .left(100))
             .child(
                 createGameModeField().top(76)
@@ -91,11 +103,26 @@ public class FakePlayerSpawnWindow extends ModularPanel {
     }
 
     private TextFieldWidget createNameField() {
-        this.nameSyncValue = new StringSyncValue(() -> this.draft.botName, val -> this.draft.botName = val);
-        this.nameField = new TextFieldWidget().value(this.nameSyncValue)
+        this.nameField = new TextFieldWidget()
+            .value(new StringSyncValue(() -> this.draft.botName, val -> this.draft.botName = val))
             .setMaxLength(16)
             .size(120, 16);
         return this.nameField;
+    }
+
+    private TextFieldWidget createXField() {
+        this.xField = createCoordinateField(() -> this.draft.x, val -> this.draft.x = val);
+        return this.xField;
+    }
+
+    private TextFieldWidget createYField() {
+        this.yField = createCoordinateField(() -> this.draft.y, val -> this.draft.y = val);
+        return this.yField;
+    }
+
+    private TextFieldWidget createZField() {
+        this.zField = createCoordinateField(() -> this.draft.z, val -> this.draft.z = val);
+        return this.zField;
     }
 
     private TextFieldWidget createCoordinateField(IntGetter getter, IntSetter setter) {
@@ -106,15 +133,16 @@ public class FakePlayerSpawnWindow extends ModularPanel {
     }
 
     private TextFieldWidget createDimensionField() {
-        return new TextFieldWidget()
+        this.dimensionField = new TextFieldWidget()
             .value(new IntSyncValue(() -> this.draft.dimension, val -> this.draft.dimension = val))
             .setFormatAsInteger(true)
             .setNumbers()
             .size(42, 16);
+        return this.dimensionField;
     }
 
     private TextFieldWidget createGameModeField() {
-        return new TextFieldWidget()
+        this.gameModeField = new TextFieldWidget()
             .value(
                 new StringSyncValue(
                     () -> this.draft.gameMode,
@@ -122,39 +150,61 @@ public class FakePlayerSpawnWindow extends ModularPanel {
             .setValidator(FakePlayerManagerService::normalizeGameMode)
             .setMaxLength(16)
             .size(54, 16);
+        return this.gameModeField;
     }
 
     private ButtonWidget<?> createSpawnButton() {
         return new ButtonWidget<>().size(60, 18)
-            .overlay(IKey.str("生成"))
+            .overlay(IKey.str("Spawn"))
             .onMousePressed(mouseButton -> {
-                if (mouseButton == 0 && this.nameField != null && this.nameSyncValue != null) {
-                    this.nameSyncValue.setStringValue(this.nameField.getText());
+                if (mouseButton == 0 && this.spawnRequestSyncValue != null) {
+                    this.pendingSpawnRequest = buildSpawnRequest();
+                    this.statusMessage = "Spawning...";
+                    this.spawnRequestSyncValue.setStringValue(this.pendingSpawnRequest);
                 }
                 return true;
-            })
-            .syncHandler(new InteractionSyncHandler().setOnMousePressed(mouseData -> {
-                if (mouseData.mouseButton != 0 || mouseData.isClient()) {
-                    return;
-                }
-                this.statusMessage = "正在生成...";
-                FakePlayerManagerService.SpawnDraft snapshot = this.draft.copy();
-                try {
-                    ServerThreadUtil.addScheduledTask(() -> {
-                        try {
-                            this.statusMessage = this.service.submitSpawn(this.player, snapshot);
-                        } catch (CommandException exception) {
-                            this.statusMessage = exception.getMessage();
-                        }
-                    });
-                } catch (IllegalStateException ignored) {
-                    try {
-                        this.statusMessage = this.service.submitSpawn(this.player, snapshot);
-                    } catch (CommandException exception) {
-                        this.statusMessage = exception.getMessage();
-                    }
-                }
-            }));
+            });
+    }
+
+    private String buildSpawnRequest() {
+        String botName = this.nameField == null ? this.draft.botName : this.nameField.getText();
+        String x = this.xField == null ? Integer.toString(this.draft.x) : this.xField.getText();
+        String y = this.yField == null ? Integer.toString(this.draft.y) : this.yField.getText();
+        String z = this.zField == null ? Integer.toString(this.draft.z) : this.zField.getText();
+        String dimension = this.dimensionField == null ? Integer.toString(this.draft.dimension)
+            : this.dimensionField.getText();
+        String gameMode = this.gameModeField == null ? this.draft.gameMode : this.gameModeField.getText();
+        return String.join("\n", botName, x, y, z, dimension, gameMode);
+    }
+
+    private void handleSpawnRequest(String request) {
+        this.pendingSpawnRequest = request;
+        if (request == null || request.isEmpty()) {
+            return;
+        }
+
+        try {
+            ServerThreadUtil.addScheduledTask(() -> applySpawnRequest(request));
+        } catch (IllegalStateException ignored) {
+            applySpawnRequest(request);
+        }
+    }
+
+    private void applySpawnRequest(String request) {
+        String[] parts = request.split("\n", -1);
+        if (parts.length != 6) {
+            this.statusMessage = "Spawn request payload is invalid";
+            return;
+        }
+
+        try {
+            this.statusMessage = this.service
+                .submitSpawn(this.player, parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]);
+        } catch (CommandException exception) {
+            this.statusMessage = exception.getMessage();
+        } finally {
+            this.pendingSpawnRequest = "";
+        }
     }
 
     @Override

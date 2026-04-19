@@ -22,8 +22,6 @@ class FakePlayerMovementUpdateTest {
     void runLivingUpdateDoesNotSwallowFailures() {
         IllegalStateException exception = new IllegalStateException("unexpected");
 
-        assertThrows(IllegalStateException.class, () -> FakePlayer.runLivingUpdate(() -> {
-            throw exception;
-        }));
+        assertThrows(IllegalStateException.class, () -> FakePlayer.runLivingUpdate(() -> { throw exception; }));
     }
 }

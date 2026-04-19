@@ -3,16 +3,15 @@ package com.andgatech.gtstaff;
 import java.io.File;
 
 import net.minecraft.server.MinecraftServer;
+import net.minecraftforge.common.MinecraftForge;
 
 import com.andgatech.gtstaff.command.CommandGTstaff;
 import com.andgatech.gtstaff.command.CommandPlayer;
 import com.andgatech.gtstaff.config.Config;
 import com.andgatech.gtstaff.fakeplayer.FakePlayerRegistry;
-import com.andgatech.gtstaff.fakeplayer.MonsterRepellentService;
 import com.andgatech.gtstaff.fakeplayer.FakePlayerRestoreScheduler;
+import com.andgatech.gtstaff.fakeplayer.MonsterRepellentService;
 import com.andgatech.gtstaff.ui.FakePlayerInventoryGuiHandler;
-
-import net.minecraftforge.common.MinecraftForge;
 
 import cpw.mods.fml.common.event.FMLInitializationEvent;
 import cpw.mods.fml.common.event.FMLLoadCompleteEvent;

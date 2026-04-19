@@ -12,7 +12,7 @@ public class Config {
     // region FakePlayer Settings
     public static int fakePlayerPermissionLevel = 2;
     public static boolean allowNonOpControlOwnBot = true;
-    public static int maxBotsPerPlayer = 5;
+    public static int maxBotsPerPlayer = 10;
     public static int maxBotsTotal = 20;
     public static int defaultMonitorRange = 16;
     // endregion

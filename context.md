@@ -28,11 +28,20 @@
 - `FakePlayer.runLivingUpdate(...)`：在 `EntityPlayerMP.onUpdate()` 之后直接执行 `onLivingUpdate()`，补上 fake player 的移动/跳跃/碰撞链路，但不再调用 `onUpdateEntity()` 触发第二次 `PlayerTickEvent`
 - `PlayerActionPack`：支持 `USE`、`ATTACK`、`JUMP`、`DROP_ITEM`、`DROP_STACK`，包含 `turn`、`stopMovement`、`setSlot` 与挖掘状态机
 
+### ServerUtilities 兼容
+- `ServerUtilitiesCompat.isFakePlayer(EntityPlayerMP)`：将 GTstaff 的 `FakePlayer` 暴露为可供 ServerUtilities 判断的兼容入口
+- `ServerUtils_ServerUtilitiesMixin`：注入 `serverutils.lib.util.ServerUtils.isFake(EntityPlayerMP)` 返回阶段；如果玩家是 GTstaff `FakePlayer`，则强制返回 `true`
+- 效果：GTstaff 生成的假人不会再被 `ServerUtilities` 的统计、登录记录与相关玩家上下文逻辑计作真实玩家
+
 ### 命令
 - `CommandPlayer`：支持 `/player list`
 - `CommandPlayer`：支持 `/player <name> spawn [at ...] [facing ...] [in ...] [as ...]`
-- `CommandPlayer`：支持 `/player <name> kill`、`shadow`、`monitor`
+- `CommandPlayer`：支持 `/player <name> kill`、`purge`、`shadow`、`monitor`
+- `CommandPlayer`：支持 `/player <name> monitor [on|off|range <radius>|interval <ticks>|scan]`
+- `CommandPlayer`：支持 `/player <name> repel [on|off|range <radius>]`
+- `CommandPlayer`：支持 `/player <name> inventory [summary|open]`
 - `CommandPlayer`：支持动作与控制子命令 `attack`、`use`、`jump`、`drop`、`dropStack`、`move`、`look`、`turn`、`sneak`、`unsneak`、`sprint`、`unsprint`、`mount`、`dismount`、`hotbar`、`stop`、`follow`
+- `CommandPlayer`：帮助文本现已显式列出 `stopattack` 与 `stopuse`
 - `CommandGTstaff`：支持 `/gtstaff ui` 打开 `FakePlayerManagerUI`
 
 ### 监控相关
@@ -58,6 +67,9 @@
 - Y 轴控制：空中时 `setJumping(true)` 上升、`motionY -= 0.1` 下降，阈值 0.5 格
 - 超距传送：距离 > teleportRange 时传送到玩家背后 2 格
 - 跨维度传送：维度不同时等待 100 tick（5 秒），聊天栏通知玩家，计时结束后跨维度传送
+- 跨维度传送失败回滚：如果目标世界挂接失败，会恢复假人的原始 `dimension/worldObj/position`，并允许下一个倒计时周期继续重试
+- 目标玩家临时离线/重连：`FollowService` 会保留 `followTargetUUID`，只重置跨维度倒计时；玩家重新上线后会继续跟随，并在必要时重新触发跨维度传送
+- 目标玩家查找：`findTargetPlayer(...)` 会优先选择同 UUID 的存活实体，避免旧的 `isDead` 残留玩家对象阻塞后续跟随与跨维度传送
 - 飞行同步：跟随时自动将 `fakePlayer.capabilities.isFlying` 同步为目标玩家的飞行状态
 - 参数：followRange（默认 3 格）、teleportRange（默认 32 格），可通过命令和 UI 调节
 - 命令：`/player <name> follow [player|stop|range <n>|tprange <n>]`
@@ -65,16 +77,23 @@
 - 持久化：followTarget（UUID）、followRange、teleportRange 写入 `data/gtstaff_registry.dat`；重启后自动恢复跟随
 
 ### 持久化
-- `FakePlayerRegistry`：支持大小写不敏感查询、按 owner 计数、`save(File)`、`load(File)`、`restorePersisted(...)`
+- `FakePlayerRegistry`：支持大小写不敏感查询、按 owner 计数、`contains(name)`、`save(File)`、`saveServerRegistry(server)`、`load(File)`、`restorePersisted(...)`
 - `data/gtstaff_registry.dat`：当前保存 bot 名称、`profileId`、`owner UUID`、维度、坐标、朝向、游戏模式、飞行状态、监控开关、监控半径、提醒频率、驱逐开关、驱逐范围、跟随目标、跟随距离、传送距离
 - `CommonProxy`：在 `serverStarted` 加载并恢复 fake player，在 `serverStopping` 保存 registry
+- `PlayerDataCleanup`：会在存档根目录下清理 `playerdata`、`serverutilities/players` 与 `stats` 中与 fake player 对应的玩家文件；`playerdata` 删除 `<uuid>.dat` 与 `<name>.baub/.baubback/.thaum/.thaumback`，`serverutilities/players` 删除 `<name>.dat`，`stats` 删除 `<uuid>.*`
+- `PlayerDataCleanup`：`playerdata` 名称型文件删除白名单当前包含 `<name>.baub/.baubback/.thaum/.thaumback/.tf/.tfback`，但不会删除 `<name>.dat`
+- `CommandPlayer.resolveSaveRoot(...)`：当前优先使用 overworld 的 `getChunkSaveLocation()` 获取真实世界存档根目录，其次才回退到 `DimensionManager.getCurrentSaveRootDirectory()` 与 `server.getFile(...)`
+- `CommandPlayer.getSaveRootsForCleanup(...)`：清理时会同时尝试解析出的世界存档根目录和 `server.getFile(...)` 推导出的工作根目录，覆盖单人/集成服中 `playerdata` 与 `serverutilities/stats` 分散在不同根目录的情况
 
 ### UI
 - `FakePlayerManagerUI`：基于 `ModularUI2` 的 fake player 管理面板，可由 `/gtstaff` 打开；当前已重构为左侧 bot 列表（带颜色） + 右侧 `Overview / Inventory / Actions / Monitor / Other` 页签
+- `Overview` 页签：当前提供 `Kill` 与“完全清除”按钮；“完全清除”会调用 `/player <name> purge`，同时从在线实体、持久化 registry、当前世界存档的 `playerdata`、`serverutilities/players` 与 `stats` 中删除 bot 并立即保存
 - Monitor 页签：切换监控开关 + 扫描按钮 + 4个提醒频率按钮（10秒/30秒/1分/5分）+ 可滚动机器状态列表
+- Other 页签中的敌对生物驱逐、跟随距离与传送距离现在都已有对应命令入口，不再只依赖 UI
 - `ClientProxy.init(...)`：当前会向 `GuiManager` 注册 `FakePlayerManagerUI.INSTANCE`，保证客户端能解开 `OpenGuiPacket`
 - `PopupPanelLayout`：统一让 Spawn / Inventory / Look 三个子窗口相对主面板居中，避免 panel 出现在主界面右侧屏幕外缘
-- `FakePlayerManagerService`：负责把 MUI2 表单状态转换为命令参数、bot 列表/概要与背包管理入口；当前已支持 `spawn`、`look`、`inventory`、`listBotNames()`、`defaultSelectedBotName()`、`describeBot()`、`openInventoryManager()`
+- `FakePlayerManagerService`：负责把 MUI2 表单状态转换为命令参数、bot 列表/概要与背包管理入口；当前已支持 `spawn`、`look`、`inventory`、`killBot()`、`purgeBot()`、`listBotNames()`、`defaultSelectedBotName()`、`describeBot()`、`openInventoryManager()`
+- `FakePlayerSpawnWindow`：生成按钮当前不再依赖文本框同步和按钮点击的包顺序；点击时会把 bot 名、坐标、维度、模式打包成单个请求并在服务端解析执行
 - `FakePlayerManagerService`：当在线 bot 只有一个时，会为 `LookDraft` 与 `InventoryDraft` 自动预填 bot 名称；inventory 未命中 bot 时会附带当前在线 bot 列表提示
 - `FakePlayerManagerService` 支持设置提醒频率 `setReminderInterval()`，`BotDetails` 包含 `reminderInterval` 字段
 - `FakePlayerSpawnWindow`：已接入真实表单，可输入 bot 名称、坐标、维度、游戏模式，并通过服务端按钮触发 `/player spawn`
@@ -91,6 +110,7 @@
 - `EntityPlayerMPMixin`：为 `FakePlayer` 注入并 tick `PlayerActionPack`
 - `EntityPlayerMP_RespawnMixin`：在 fake player respawn 后复制 owner 与监控状态并重新注册
 - `ServerConfigurationManagerMixin`：在 respawn 路径中为 fake player 构造 `FakePlayer`
+- `ServerUtils_ServerUtilitiesMixin`：为 `ServerUtilities` 的 `ServerUtils.isFake(...)` 补充 GTstaff `FakePlayer` 识别
 - `Entity_KnockbackMixin`：只为 `FakePlayer` 设置 `velocityChanged`
 - `EntityPlayerMP_TickFreezeMixin`：保留 fake player tick-freeze 占位绕过
 
@@ -107,6 +127,7 @@
 - `src/test/java/com/andgatech/gtstaff/fakeplayer/FakePlayerRegistryTest.java`
 - `src/test/java/com/andgatech/gtstaff/fakeplayer/MachineMonitorServiceTest.java`
 - `src/test/java/com/andgatech/gtstaff/fakeplayer/PlayerActionPackTest.java`
+- `src/test/java/com/andgatech/gtstaff/integration/ServerUtilitiesCompatTest.java`
 - `src/test/java/com/andgatech/gtstaff/command/CommandPlayerTest.java`
 - `src/test/java/com/andgatech/gtstaff/ClientProxyTest.java`
 - `src/test/java/com/andgatech/gtstaff/command/CommandGTstaffTest.java`
@@ -123,6 +144,7 @@
 ## 依赖
 - JUnit Jupiter 5.10.2（测试）
 - GTNHLib：当前已实际参考并接入 `ServerThreadUtil`；`AboveHotbarHUD` / `PacketMessageAboveHotbar` 与 `ConfigSyncHandler` 记录为后续可选参考
+- `ServerUtilities`：当前通过可选 mixin 接入其 `ServerUtils.isFake(...)` 判断链，不要求 GTstaff 在无该模组环境下强依赖加载
 
 ## 架构备注
 - `IFakePlayerHolder` 负责把 `PlayerActionPack` 暴露给 `FakePlayer`
@@ -148,6 +170,7 @@
 - `./gradlew.bat --offline build` 当前会在 `spotlessJavaCheck` 因 CRLF/LF 格式差异失败，但不影响 `assemble`、`test`、`compileJava` 与 reobf jar 产出
 - 当前 Gradle 在线解析 `gtnhgradle:1.+` 偶发 TLS 握手失败，验证命令优先使用 `--offline`
 - `FollowService.tick()` 在 `actionPack.onUpdate()` 之后执行，覆盖 actionPack 设置的 moveForward/moveStrafing；跟随优先级高于手动 move 命令
-- 跨维度传送通过手动将假人从旧世界移除、在新世界 spawn 实现，不走 `transferPlayerToDimension`
+- 跨维度传送通过 `FollowService` 内部的手动迁移流程实现：先从旧世界 `PlayerManager/playerEntities/loadedEntityList` 摘除，再在新世界预加载 chunk 后 `spawnEntityInWorld(...)`，失败时由快照回滚，不走 `transferPlayerToDimension`
+- `ServerUtilities` 兼容不去改 `Universe` 等分散统计入口，而是统一挂接在 `ServerUtils.isFake(...)` 的中心判断点，减少后续版本漂移时的漏改风险
 
 

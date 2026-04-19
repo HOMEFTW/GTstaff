@@ -1,5 +1,116 @@
 # 开发日志
 
+## 2026-04-19：补齐缺失的假人命令入口
+
+### 已完成
+- 为 `CommandPlayer` 新增 `repel` 与 `inventory` 子命令，并扩展现有 `monitor` 子命令支持 `scan` 与 `interval <ticks>`
+- `repel` 命令现已覆盖敌对生物驱逐的开关与范围设置，`inventory` 命令现已支持 `summary` 与 `open`
+- `monitor` 无参状态输出现在会显示提醒频率，`monitor scan` 会输出当前机器概览，`monitor interval` 会更新提醒 tick 间隔
+- 更新 `/player` 用法字符串，把 `stopattack`、`stopuse`、`repel`、`inventory` 一并写入帮助文本
+- 扩展 `CommandPlayerTest`，覆盖新命令路由、用法字符串、`monitor interval` 状态更新与 `repel` 状态更新
+- 通过 `./gradlew.bat --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true test --tests com.andgatech.gtstaff.command.CommandPlayerTest`
+- 通过 `./gradlew.bat --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true assemble`
+
+### 遇到的问题
+- **已有功能分散在 UI service 与命令层之间**：敌对生物驱逐、提醒频率和背包管理原本只有 UI 入口，需要回到 `CommandPlayer` 补齐统一的命令分发
+
+### 做出的决定
+- 命令语义尽量贴合现有 UI：`repel [on|off|range <n>]`、`monitor [scan|interval <ticks>]`、`inventory [summary|open]`
+- 不额外新增新的 service 层抽象，优先在 `CommandPlayer` 中补最小命令入口，避免把本次改动扩散到更多类
+
+## 2026-04-19：扩展完全清除以删除 tf 与 tfback
+
+### 已完成
+- 扩展 `PlayerDataCleanup.PLAYERDATA_NAME_EXTENSIONS`，让“完全清除”额外删除 `playerdata/<假人名>.tf` 与 `playerdata/<假人名>.tfback`
+- 扩展 `PlayerDataCleanupTest`，覆盖 `.tf/.tfback` 会被删除、其他 bot 的同类文件会保留、`playerdata/<假人名>.dat` 仍不会被误删
+- 通过 `./gradlew.bat --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true test --tests com.andgatech.gtstaff.util.PlayerDataCleanupTest`
+- 通过 `./gradlew.bat --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true assemble`
+
+### 遇到的问题
+- **现有回归只覆盖 baub/thaum 系列**：先补红灯测试后，失败点准确落在新增 `.tf/.tfback` 尚未纳入删除列表
+
+### 做出的决定
+- 继续沿用“按假人名扩展名白名单删除”的策略，只把 `.tf/.tfback` 加进 `playerdata` 名称型文件列表，不改变 UUID `.dat` 和名字 `.dat` 的现有规则
+
+## 2026-04-19：接入 ServerUtilities 假人统计排除兼容
+
+### 已完成
+- 阅读 `ServerUtilities-master` 的 `serverutils.lib.util.ServerUtils` 与 `serverutils.lib.data.Universe`，确认统计、登录记录与玩家上下文都统一依赖 `ServerUtils.isFake(EntityPlayerMP)`
+- 新增 `ServerUtilitiesCompat.isFakePlayer(...)`，集中定义 GTstaff 假人是否应被 ServerUtilities 视为 fake player
+- 新增 `ServerUtils_ServerUtilitiesMixin`，在 `ServerUtils.isFake(...)` 返回阶段补充 `com.andgatech.gtstaff.fakeplayer.FakePlayer` 判断，避免 GTstaff 生成的假人被计入 ServerUtilities 统计
+- 更新 `mixins.gtstaff.json` 注册 `ServerUtils_ServerUtilitiesMixin`
+- 新增 `ServerUtilitiesCompatTest`，覆盖“GTstaff 假人会被兼容判断识别”为 true、“真实玩家为 false”以及 mixin 已注册到 `mixins.gtstaff.json`
+- 通过 `./gradlew.bat --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true test --tests com.andgatech.gtstaff.integration.ServerUtilitiesCompatTest`
+- 通过 `./gradlew.bat --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true assemble`
+
+### 遇到的问题
+- **GTstaff 假人不满足 ServerUtilities 原生 fake 判定**：当前假人既不是 Forge `FakePlayer`，`playerNetServerHandler` 也不为 `null`，因此会被 `ServerUtils.isFake(...)` 当作真实玩家
+- **单测环境不会真实应用 Mixin**：测试改为拆成两层，分别验证兼容 helper 的行为和 `mixins.gtstaff.json` 的注册，保证兼容逻辑与装配都能回归
+
+### 做出的决定
+- 不去零散修改 `Universe` 中的统计入口，而是直接接入 `ServerUtils.isFake(...)` 这一处中心判断，降低漏改和后续维护成本
+- 使用 `@Pseudo` + `targets = "serverutils.lib.util.ServerUtils"` 的可选 mixin 方案，保持没有 ServerUtilities 时也能安全编译和启动
+
+## 2026-04-19：新增完全清除假人功能
+
+### 已完成
+- 在 `FakePlayerManagerUI` 概览页新增“完全清除”按钮，服务端点击后会调用 `FakePlayerManagerService.purgeBot(...)`
+- 在 `CommandPlayer` 新增 `/player <name> purge` 子命令，支持清除在线 fake player，也支持仅存在于持久化 registry 的离线 bot
+- `FakePlayerRegistry` 新增 `contains(name)` 与 `saveServerRegistry(server)`，用于判断离线持久化 bot 是否存在，并在 purge 后立即写回 `data/gtstaff_registry.dat`
+- `PlayerDataCleanup` 会继续清理 GTNH 存档中的 `playerdata`、`serverutilities/players` 与 `stats`：`playerdata` 删除 `<uuid>.dat` 和 `<name>.baub/.baubback/.thaum/.thaumback`，`serverutilities/players` 删除 `<name>.dat`，`stats` 删除 `<uuid>.*`
+- `CommandPlayer.resolveSaveRoot(...)` 改为优先使用 overworld 的 `getChunkSaveLocation()`，其次回退到 `DimensionManager.getCurrentSaveRootDirectory()`，确保单人/集成服中的文件清理发生在当前世界存档目录而不是服务器工作目录
+- `CommandPlayer.getSaveRootsForCleanup(...)` 会在 purge 时同时尝试世界存档根和 `server.getFile(...)` 推导出的工作根，修复“`playerdata` 成功删除，但 `serverutilities/players` 与 `stats` 仍残留”的场景
+- 补充 `CommandPlayerTest`、`FakePlayerManagerServiceTest`、`FakePlayerRegistryTest` 回归用例，覆盖命令分发、UI service 参数构建与持久化存在性判断
+- 新增 `PlayerDataCleanupTest`，覆盖 `playerdata/<uuid>.dat`、`playerdata/<name>.baub/.baubback/.thaum/.thaumback`、`serverutilities/players/<name>.dat` 与 `stats/<uuid>.*` 的删除场景
+- 新增 `CommandPlayerTest.resolveSaveRootPrefersCurrentWorldSaveDirectory()`，覆盖“优先取当前世界存档根目录”的路径回归场景
+- 新增 `CommandPlayerTest.cleanupRootsIncludeResolvedRootAndFallbackRootWhenDifferent()`，覆盖“清理时同时尝试世界根目录与工作根目录”的路径回归场景
+- 通过 `./gradlew.bat --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true test --tests com.andgatech.gtstaff.command.CommandPlayerTest --tests com.andgatech.gtstaff.ui.FakePlayerManagerServiceTest --tests com.andgatech.gtstaff.fakeplayer.FakePlayerRegistryTest`
+- 通过 `./gradlew.bat --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true assemble`
+
+### 遇到的问题
+- **Gradle 沙箱下无法创建 wrapper lock 文件**：测试首次运行被卡在用户缓存目录，随后改为使用允许访问本地 Gradle 缓存的提权命令执行验证
+- **离线 purge 需要区分“无 owner 的 bot”与“不存在的 bot”**：仅靠 `getOwnerUUID(name)` 无法判断两者，补上 `FakePlayerRegistry.contains(name)` 作为存在性判断
+- **最初 purge 没有删到真实存档文件**：根因是使用 `server.getFile("playerdata")` 推导目录时拿到的是服务器工作目录而非当前世界 save root，导致命中错误路径
+- **集成服映射环境下 world save API 名称不一致**：直接写 `func_72860_G()` 在当前工作区无法通过编译，最终改为复用 `WorldServer.getChunkSaveLocation()` 作为兼容的真实存档根目录来源
+- **单人环境下不同数据目录可能不在同一根路径**：现场反馈 `playerdata` 能删但 `serverutilities/players`、`stats` 不能删，说明仅锁定一个 save root 仍不够，需额外覆盖服务端工作根
+
+### 做出的决定
+- `/player <name> purge` 语义定义为硬删除：在线时先走安全下线/移除，再清 registry，并立即保存持久化文件
+- GTNH 存档中的 `playerdata` 与 `serverutilities/players` 视为固定存在路径，清理逻辑直接按这两个目录执行，不再额外做模组存在性判断
+- `stats` 也按 GTNH 存档固定路径处理，且只按 UUID basename 删除，避免误删名字同名的其他统计文件
+- purge 的存档根目录解析优先使用 overworld `getChunkSaveLocation()`，再回退到 Forge 当前 save root，最后才使用 `server.getFile(...)` 兜底
+- purge 实际执行文件删除时不再只依赖单一路径，而是对“解析出的世界存档根”和“服务端工作根”都尝试一次并去重
+- UI 仅在概览页补“完全清除”按钮，不改变现有 bot 列表的数据来源与刷新策略，尽量把改动控制在最小范围
+
+## 2026-04-19：假人跟随玩家功能
+
+### 已完成
+- 新增 `FollowService`，挂载在 `FakePlayer` 上，每 tick 在 `actionPack.onUpdate()` 之后、`runLivingUpdate()` 之前执行
+- 方向计算：`calculateMovement(fakeYaw, fromX, fromZ, toX, toZ)` 通过 yaw 差的 cos/sin 分量转换为 moveForward / moveStrafing
+- Y 轴控制：飞行时直接设置 `motionY`（上升 +0.2、下降 -0.2），接近目标高度时阻尼减速；地面时使用 `setJumping`
+- 超距传送：距离 > teleportRange 时传送到玩家背后 2 格
+- 跨维度传送：维度不同时等待 100 tick（5 秒），聊天栏通知玩家，计时结束后手动执行维度转移（从服务端玩家列表移除→旧世界移除→重置 isDead→新世界生成→重新加入玩家列表）
+- 飞行同步：跟随时自动将 `fakePlayer.capabilities.isFlying` 同步为目标玩家的飞行状态
+- 命令：`/player <name> follow [player|stop|range <n>|tprange <n>]`
+- UI：Other 页签上半区敌对生物驱逐器（开关+范围按钮），下半区假人跟随（跟随我/停止跟随+跟随距离+传送距离按钮），底栏状态文本
+- 持久化：followTarget（UUID）、followRange、teleportRange 写入 `data/gtstaff_registry.dat`；重启后自动恢复跟随
+- 13 个单元测试覆盖方向计算、Y 轴控制、默认参数
+- 通过 `./gradlew.bat --offline test` + `./gradlew.bat --offline assemble` 端到端验证
+
+### 遇到的问题
+- **飞行跟随时假人只上升一格**：`setJumping(true)` 在飞行模式下不产生上升力，改为直接设置 `motionY += 0.2`
+- **UI 跟随控件挤占驱逐器空间**：原左右两列布局重叠，改为上下分区+分隔线
+- **`Unsafe.allocateInstance` 创建的测试 Stub 没有 `followService`**：`isFollowing()` 加 null 保护，`snapshot()` 加 null 安全读取
+- **跨维度传送失败（vanilla `transferPlayerToDimension`）**：vanilla 方法可能在内部设置 dimension 后失败，导致维度记录与实际世界不一致，改为手动控制每一步
+- **连续换维度时倒计时混乱**：玩家快速切换维度会重置倒计时并重新发消息，传送前再次检查维度是否仍不同
+
+### 做出的决定
+- 跟随优先级高于手动 move 命令（FollowService.tick() 在 actionPack.onUpdate() 之后执行，覆盖移动值）
+- 跨维度传送不走 `transferPlayerToDimension`，手动控制完整生命周期避免半失败状态
+- 停止跟随时清零 moveForward/moveStrafing/setJumping，恢复手动控制
+
+---
+
 ## 2026-04-18：敌对生物驱逐器功能
 
 ### 已完成
@@ -292,3 +403,64 @@
 
 ### 做出的决定
 - Spawn 逻辑不在 UI 层重复实现，而是统一复用现有 `/player spawn` 命令路径。
+## 2026-04-19：修复假人跟随连续跨维度传送卡在错误维度
+### 已完成
+- 重新阅读 `ToDOLIST.md`、`log.md`、`context.md`，确认连续跨维度传送时的核心问题在 `FollowService.executeCrossDimensionTeleport(...)`
+- 修复 `FollowService.handleCrossDimension(...)` 的服务端参数传递，避免跨维度倒计时结束时拿不到当前 `MinecraftServer`
+- 将默认跨维度迁移改为更接近原版/GT5U 玩家迁移的流程：从旧世界 `PlayerManager`、`playerEntities`、chunk 实体列表和 `loadedEntityList` 正确摘除，再在目标世界预加载 chunk 后重新挂接
+- 为跨维度迁移增加失败回滚快照；如果目标世界挂接失败，会恢复假人的原始 `dimension`、`worldObj`、坐标和飞行状态，避免后续 tick 因字段已污染而停止重试
+- 扩展 `FollowServiceTest`，新增“失败后回滚维度状态”和“失败后下一个倒计时周期继续重试”两个回归场景
+- 通过 `./gradlew.bat --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true compileJava`
+- 通过 `./gradlew.bat --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true test --tests com.andgatech.gtstaff.fakeplayer.FollowServiceTest`
+
+### 遇到的问题
+- **原实现过早写入 `fakePlayer.dimension` / `worldObj`**：一旦新世界 `spawnEntityInWorld(...)` 失败，后续 `tick()` 会误判假人已经在目标维度，不再继续跨维度传送
+- **测试夹具被 `Unsafe` 空初始化干扰**：新增回滚测试最初因 `boundingBox` 为空在 `setLocationAndAngles(...)` 处崩溃，后续在测试里补齐最小实体状态
+- **GTNH Gradle 插件在测试阶段会重新做 manifest 检查**：本次验证命令需要显式加上 `DISABLE_BUILDSCRIPT_UPDATE_CHECK`、`autoUpdateBuildScript=false` 和 `disableSpotless=true`
+
+### 做出的决定
+- 不直接调用 `transferPlayerToDimension(...)`，而是在 `FollowService` 内保留 fake player 专用迁移逻辑，但补齐旧世界摘除、新世界挂接和失败回滚
+- 失败保护采用双层兜底：迁移逻辑内部尽量恢复旧世界挂接，`executeCrossDimensionTeleport(...)` 外层再用快照恢复关键字段，避免再次出现“维度字段已变更但实体未真正迁移”的半状态
+
+---
+
+## 2026-04-19：修复玩家重启后假人跟随状态被提前清空
+### 已完成
+- 定位到 `FollowService.tick()` 在目标玩家临时离线或重连过程实体失效时会直接 `stop()`，导致 `followTargetUUID` 在玩家重新上线前就被清空
+- 调整 `FollowService`：目标玩家暂时不存在或 `isDead` 时仅重置跨维度倒计时状态，不再清除跟随目标 UUID
+- 新增 `FollowServiceTest` 回归用例，覆盖“目标暂时不在线时保留跟随状态”与“目标重连后处于另一维度时能重新进入跨维度跟随”两个场景
+- 通过 `./gradlew.bat --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true test --tests com.andgatech.gtstaff.fakeplayer.FollowServiceTest`
+
+### 做出的决定
+- 将“目标玩家临时离线”视为可恢复状态而不是明确停止条件，这样客户端重启、服务端重启后的玩家重连都能继续沿用原有跟随关系
+- 玩家临时离线期间只清理跨维度倒计时，不保留旧倒计时进度，避免重连后立刻沿用过期计时器
+
+---
+
+## 2026-04-19：修复同 UUID 旧死实体阻塞后续跨维度跟随
+### 已完成
+- 定位到 `FollowService.findTargetPlayer(...)` 之前会返回 `playerEntityList` 里第一个 UUID 匹配的实体，即使它是旧的 `isDead=true` 残留对象
+- 调整目标查找逻辑：优先返回同 UUID 的存活玩家实体，只有不存在存活实体时才回退到旧死实体
+- 新增 `FollowServiceTest` 回归用例，覆盖“同 UUID 的旧死实体存在时，跟随逻辑仍会选中新的存活实体并继续跨维度传送”
+- 重新通过 `./gradlew.bat --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true test --tests com.andgatech.gtstaff.fakeplayer.FollowServiceTest`
+
+### 做出的决定
+- `findTargetPlayer(...)` 不再使用“遇到第一个 UUID 匹配对象就直接返回”的策略，避免玩家重连、切维或实体替换期间被过期对象卡死
+
+---
+
+## 2026-04-19：修复 UI 生成假人按钮失效
+### 已完成
+- 排查 `FakePlayerSpawnWindow` 提交链路，确认旧实现依赖“文本框同步包先于按钮点击包到达服务端”，而生成窗口的 bot 名默认为空，这会让服务端经常拿到空白 bot 名并直接拒绝生成
+- 将生成按钮改为“一次请求提交整张表单”的模式：客户端点击时直接采集当前输入框内容，打包成单个 `gtstaffSpawnRequest` 同步值，由服务端统一解析并执行 `submitSpawn(...)`
+- 在 `FakePlayerManagerService` 新增原始 UI 字段入口，服务端会直接解析 `botName/x/y/z/dimension/gameMode` 字符串并复用现有 `/player ... spawn ...` 命令路径
+- 顺手修复 `FakePlayerManagerUI` 中一个遗留的链式调用语法错误，避免它阻塞本次编译验证
+- 新增 `FakePlayerManagerServiceTest` 回归用例，覆盖“原始 UI 字段构建 spawn 命令参数”和“非法 X 坐标会被拦截”两个场景
+- 通过 `./gradlew.bat --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true compileJava test --tests com.andgatech.gtstaff.ui.FakePlayerManagerServiceTest`
+- 通过 `./gradlew.bat --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true assemble`
+
+### 做出的决定
+- 生成窗口不再复用 `InteractionSyncHandler` 直接在服务端读取 `draft.copy()`，而是显式提交一份表单快照，避免 bot 名等焦点中字段因为同步竞态变成空值
+- 保留 `FakePlayerManagerService.submitSpawn(SpawnDraft)` 作为原有服务接口，同时增加字符串入口，尽量把改动收敛在 UI 提交层
+
+---

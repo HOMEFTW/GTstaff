@@ -188,9 +188,20 @@ public class FakePlayerRegistry {
         return fakePlayers.get(normalize(name));
     }
 
+    public static boolean contains(String name) {
+        String normalizedName = normalize(name);
+        return normalizedName != null
+            && (fakePlayers.containsKey(normalizedName) || persistedBots.containsKey(normalizedName));
+    }
+
     public static UUID getOwnerUUID(String name) {
         PersistedBotData data = persistedBots.get(normalize(name));
         return data == null ? null : data.getOwnerUUID();
+    }
+
+    public static UUID getProfileId(String name) {
+        PersistedBotData data = persistedBots.get(normalize(name));
+        return data == null ? null : data.getProfileId();
     }
 
     public static Map<String, FakePlayer> getAll() {
@@ -264,7 +275,10 @@ public class FakePlayerRegistry {
             bot.setBoolean(MONSTER_REPELLING_KEY, data.isMonsterRepelling());
             bot.setInteger(MONSTER_REPEL_RANGE_KEY, data.getMonsterRepelRange());
             if (data.getFollowTarget() != null) {
-                bot.setString(FOLLOW_TARGET_KEY, data.getFollowTarget().toString());
+                bot.setString(
+                    FOLLOW_TARGET_KEY,
+                    data.getFollowTarget()
+                        .toString());
             }
             bot.setInteger(FOLLOW_RANGE_KEY, data.getFollowRange());
             bot.setInteger(TELEPORT_RANGE_KEY, data.getTeleportRange());
@@ -277,6 +291,10 @@ public class FakePlayerRegistry {
         } catch (IOException e) {
             throw new IllegalStateException("Unable to save fake player registry to " + file.getAbsolutePath(), e);
         }
+    }
+
+    public static void saveServerRegistry(MinecraftServer server) {
+        save(getRegistryFile(server));
     }
 
     public static void load(File file) {
@@ -319,13 +337,16 @@ public class FakePlayerRegistry {
                 int monitorRange = bot.hasKey(MONITOR_RANGE_KEY) ? bot.getInteger(MONITOR_RANGE_KEY) : 16;
                 int reminderInterval = bot.hasKey(REMINDER_INTERVAL_KEY) ? bot.getInteger(REMINDER_INTERVAL_KEY) : 600;
                 boolean monsterRepelling = bot.hasKey(MONSTER_REPELLING_KEY) && bot.getBoolean(MONSTER_REPELLING_KEY);
-                int monsterRepelRange = bot.hasKey(MONSTER_REPEL_RANGE_KEY) ? bot.getInteger(MONSTER_REPEL_RANGE_KEY) : 64;
+                int monsterRepelRange = bot.hasKey(MONSTER_REPEL_RANGE_KEY) ? bot.getInteger(MONSTER_REPEL_RANGE_KEY)
+                    : 64;
                 UUID followTarget = null;
                 if (bot.hasKey(FOLLOW_TARGET_KEY)) {
                     followTarget = UUID.fromString(bot.getString(FOLLOW_TARGET_KEY));
                 }
-                int followRange = bot.hasKey(FOLLOW_RANGE_KEY) ? bot.getInteger(FOLLOW_RANGE_KEY) : FollowService.DEFAULT_FOLLOW_RANGE;
-                int teleportRange = bot.hasKey(TELEPORT_RANGE_KEY) ? bot.getInteger(TELEPORT_RANGE_KEY) : FollowService.DEFAULT_TELEPORT_RANGE;
+                int followRange = bot.hasKey(FOLLOW_RANGE_KEY) ? bot.getInteger(FOLLOW_RANGE_KEY)
+                    : FollowService.DEFAULT_FOLLOW_RANGE;
+                int teleportRange = bot.hasKey(TELEPORT_RANGE_KEY) ? bot.getInteger(TELEPORT_RANGE_KEY)
+                    : FollowService.DEFAULT_TELEPORT_RANGE;
 
                 persistedBots.put(
                     normalizedName,
@@ -381,9 +402,12 @@ public class FakePlayerRegistry {
             fakePlayer.setMonsterRepelling(data.isMonsterRepelling());
             fakePlayer.setMonsterRepelRange(data.getMonsterRepelRange());
             if (data.getFollowTarget() != null) {
-                fakePlayer.getFollowService().setFollowRange(data.getFollowRange());
-                fakePlayer.getFollowService().setTeleportRange(data.getTeleportRange());
-                fakePlayer.getFollowService().startFollowing(data.getFollowTarget());
+                fakePlayer.getFollowService()
+                    .setFollowRange(data.getFollowRange());
+                fakePlayer.getFollowService()
+                    .setTeleportRange(data.getTeleportRange());
+                fakePlayer.getFollowService()
+                    .startFollowing(data.getFollowTarget());
             }
             register(fakePlayer, data.getOwnerUUID());
         }
@@ -391,6 +415,10 @@ public class FakePlayerRegistry {
 
     private static String normalize(String name) {
         return name == null ? null : name.toLowerCase(Locale.ROOT);
+    }
+
+    private static File getRegistryFile(MinecraftServer server) {
+        return server == null ? new File("data", "gtstaff_registry.dat") : server.getFile("data/gtstaff_registry.dat");
     }
 
     private static PersistedBotData snapshot(FakePlayer fakePlayer, UUID ownerUUID) {
@@ -401,9 +429,12 @@ public class FakePlayerRegistry {
             : fakePlayer.theItemInWorldManager.getGameType();
         int gameTypeId = gameType == null ? WorldSettings.GameType.SURVIVAL.getID() : gameType.getID();
         boolean flying = fakePlayer.capabilities != null && fakePlayer.capabilities.isFlying;
-        UUID followTarget = fakePlayer.isFollowing() ? fakePlayer.getFollowService().getFollowTargetUUID() : null;
-        int followRange = fakePlayer.getFollowService() != null ? fakePlayer.getFollowService().getFollowRange() : FollowService.DEFAULT_FOLLOW_RANGE;
-        int teleportRange = fakePlayer.getFollowService() != null ? fakePlayer.getFollowService().getTeleportRange() : FollowService.DEFAULT_TELEPORT_RANGE;
+        UUID followTarget = fakePlayer.isFollowing() ? fakePlayer.getFollowService()
+            .getFollowTargetUUID() : null;
+        int followRange = fakePlayer.getFollowService() != null ? fakePlayer.getFollowService()
+            .getFollowRange() : FollowService.DEFAULT_FOLLOW_RANGE;
+        int teleportRange = fakePlayer.getFollowService() != null ? fakePlayer.getFollowService()
+            .getTeleportRange() : FollowService.DEFAULT_TELEPORT_RANGE;
         return new PersistedBotData(
             fakePlayer.getCommandSenderName(),
             profileId,

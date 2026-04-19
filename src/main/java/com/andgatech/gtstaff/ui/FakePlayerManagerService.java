@@ -262,6 +262,18 @@ public class FakePlayerManagerService {
         return "Spawned fake player " + botName + ".";
     }
 
+    public String submitSpawn(ICommandSender sender, String botName, String xText, String yText, String zText,
+        String dimensionText, String gameModeText) {
+        SpawnDraft draft = new SpawnDraft();
+        draft.botName = botName == null ? "" : botName.trim();
+        draft.x = parseRequiredInt(xText, "X coordinate");
+        draft.y = parseRequiredInt(yText, "Y coordinate");
+        draft.z = parseRequiredInt(zText, "Z coordinate");
+        draft.dimension = parseRequiredInt(dimensionText, "Dimension");
+        draft.gameMode = normalizeGameMode(gameModeText);
+        return submitSpawn(sender, draft);
+    }
+
     public String submitLook(ICommandSender sender, LookDraft draft) {
         if (draft == null) {
             throw new CommandException("Look draft is missing");
@@ -293,6 +305,12 @@ public class FakePlayerManagerService {
         String normalizedBotName = requireBotName(botName);
         this.commandRunner.run(sender, new String[] { normalizedBotName, "kill" });
         return "Killed " + normalizedBotName + ".";
+    }
+
+    public String purgeBot(ICommandSender sender, String botName) {
+        String normalizedBotName = requireBotName(botName);
+        this.commandRunner.run(sender, new String[] { normalizedBotName, "purge" });
+        return "Purged " + normalizedBotName + ".";
     }
 
     public String shadowBot(ICommandSender sender, String botName) {
@@ -332,8 +350,11 @@ public class FakePlayerManagerService {
             throw new CommandException(buildOfflineBotMessage(normalizedBotName));
         }
         fakePlayer.setMonsterRepelling(enable);
-        return (enable ? "已开启敌对生物驱逐" : "已关闭敌对生物驱逐") + " for " + normalizedBotName
-            + " (范围: " + fakePlayer.getMonsterRepelRange() + "格)";
+        return (enable ? "已开启敌对生物驱逐" : "已关闭敌对生物驱逐") + " for "
+            + normalizedBotName
+            + " (范围: "
+            + fakePlayer.getMonsterRepelRange()
+            + "格)";
     }
 
     public String setMonsterRepelRange(ICommandSender sender, String botName, int range) {
@@ -355,7 +376,8 @@ public class FakePlayerManagerService {
         if (fakePlayer == null) {
             throw new CommandException(buildOfflineBotMessage(normalizedBotName));
         }
-        fakePlayer.getFollowService().startFollowing(player.getUniqueID());
+        fakePlayer.getFollowService()
+            .startFollowing(player.getUniqueID());
         return FakePlayer.colorizeName(normalizedBotName) + " 开始跟随你";
     }
 
@@ -365,7 +387,8 @@ public class FakePlayerManagerService {
         if (fakePlayer == null) {
             throw new CommandException(buildOfflineBotMessage(normalizedBotName));
         }
-        fakePlayer.getFollowService().stop();
+        fakePlayer.getFollowService()
+            .stop();
         fakePlayer.moveForward = 0.0F;
         fakePlayer.moveStrafing = 0.0F;
         fakePlayer.setJumping(false);
@@ -378,7 +401,8 @@ public class FakePlayerManagerService {
         if (fakePlayer == null) {
             throw new CommandException(buildOfflineBotMessage(normalizedBotName));
         }
-        fakePlayer.getFollowService().setFollowRange(range);
+        fakePlayer.getFollowService()
+            .setFollowRange(range);
         return normalizedBotName + " 跟随距离设置为 " + range + " 格";
     }
 
@@ -388,7 +412,8 @@ public class FakePlayerManagerService {
         if (fakePlayer == null) {
             throw new CommandException(buildOfflineBotMessage(normalizedBotName));
         }
-        fakePlayer.getFollowService().setTeleportRange(range);
+        fakePlayer.getFollowService()
+            .setTeleportRange(range);
         return normalizedBotName + " 传送距离设置为 " + range + " 格";
     }
 
@@ -458,8 +483,10 @@ public class FakePlayerManagerService {
                 FollowService.DEFAULT_TELEPORT_RANGE);
         }
         boolean following = fakePlayer.isFollowing();
-        int followRange = fakePlayer.getFollowService() != null ? fakePlayer.getFollowService().getFollowRange() : FollowService.DEFAULT_FOLLOW_RANGE;
-        int teleportRange = fakePlayer.getFollowService() != null ? fakePlayer.getFollowService().getTeleportRange() : FollowService.DEFAULT_TELEPORT_RANGE;
+        int followRange = fakePlayer.getFollowService() != null ? fakePlayer.getFollowService()
+            .getFollowRange() : FollowService.DEFAULT_FOLLOW_RANGE;
+        int teleportRange = fakePlayer.getFollowService() != null ? fakePlayer.getFollowService()
+            .getTeleportRange() : FollowService.DEFAULT_TELEPORT_RANGE;
         return new BotDetails(
             fakePlayer.getCommandSenderName(),
             formatOwnerLabel(fakePlayer.getOwnerUUID()),
@@ -635,6 +662,19 @@ public class FakePlayerManagerService {
             throw new CommandException("Bot name cannot be empty");
         }
         return normalizedBotName;
+    }
+
+    private int parseRequiredInt(String text, String label) {
+        String normalized = text == null ? "" : text.trim();
+        if (normalized.isEmpty()) {
+            throw new CommandException(label + " cannot be empty");
+        }
+
+        try {
+            return Integer.parseInt(normalized);
+        } catch (NumberFormatException exception) {
+            throw new CommandException("Invalid " + label + ": " + normalized);
+        }
     }
 
     private String suggestBotName() {

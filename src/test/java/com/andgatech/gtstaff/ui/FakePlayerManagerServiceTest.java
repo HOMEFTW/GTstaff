@@ -66,6 +66,31 @@ class FakePlayerManagerServiceTest {
     }
 
     @Test
+    void submitSpawnParsesRawUiFieldValues() {
+        RecordingRunner runner = new RecordingRunner();
+        FakePlayerManagerService service = new FakePlayerManagerService(runner);
+
+        String status = service.submitSpawn(sender(), "UiBot", "10", "64", "-3", "7", "creative");
+
+        assertEquals("Spawned fake player UiBot.", status);
+        assertArrayEquals(
+            new String[] { "UiBot", "spawn", "at", "10", "64", "-3", "in", "7", "as", "creative" },
+            runner.lastArgs);
+    }
+
+    @Test
+    void submitSpawnRejectsInvalidRawCoordinate() {
+        FakePlayerManagerService service = new FakePlayerManagerService(
+            (sender, args) -> { throw new AssertionError("runner should not be invoked"); });
+
+        CommandException exception = assertThrows(
+            CommandException.class,
+            () -> service.submitSpawn(sender(), "UiBot", "oops", "64", "-3", "7", "creative"));
+
+        assertEquals("Invalid X coordinate: oops", exception.getMessage());
+    }
+
+    @Test
     void submitLookBuildsPresetDirectionCommandArguments() {
         RecordingRunner runner = new RecordingRunner();
         FakePlayerManagerService service = new FakePlayerManagerService(runner);
@@ -369,6 +394,17 @@ class FakePlayerManagerServiceTest {
 
         assertEquals("Killed UiBot.", status);
         assertArrayEquals(new String[] { "UiBot", "kill" }, runner.lastArgs);
+    }
+
+    @Test
+    void purgeBotRunsPurgeCommand() {
+        RecordingRunner runner = new RecordingRunner();
+        FakePlayerManagerService service = new FakePlayerManagerService(runner);
+
+        String status = service.purgeBot(sender(), "UiBot");
+
+        assertEquals("Purged UiBot.", status);
+        assertArrayEquals(new String[] { "UiBot", "purge" }, runner.lastArgs);
     }
 
     @Test

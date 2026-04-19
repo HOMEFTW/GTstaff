@@ -8,6 +8,7 @@
     "EntityPlayerMPMixin",
     "EntityPlayerMP_RespawnMixin",
     "ServerConfigurationManagerMixin",
+    "ServerUtils_ServerUtilitiesMixin",
     "Entity_KnockbackMixin",
     "EntityPlayerMP_TickFreezeMixin"
   ],

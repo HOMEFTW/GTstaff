@@ -268,7 +268,8 @@ public class FakePlayer extends EntityPlayerMP {
     private static final EnumChatFormatting[] BOT_COLORS = { EnumChatFormatting.GREEN, EnumChatFormatting.AQUA,
         EnumChatFormatting.LIGHT_PURPLE, EnumChatFormatting.GOLD, EnumChatFormatting.YELLOW, EnumChatFormatting.BLUE,
         EnumChatFormatting.RED, EnumChatFormatting.DARK_AQUA, EnumChatFormatting.DARK_GREEN,
-        EnumChatFormatting.DARK_PURPLE, };
+        EnumChatFormatting.DARK_PURPLE, EnumChatFormatting.DARK_BLUE, EnumChatFormatting.DARK_RED,
+        EnumChatFormatting.DARK_GRAY, EnumChatFormatting.GRAY };
 
     public EnumChatFormatting getChatColor() {
         return getChatColorForName(this.getCommandSenderName());

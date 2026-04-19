@@ -14,6 +14,7 @@ import com.andgatech.gtstaff.fakeplayer.FakePlayer;
 import com.cleanroommc.modularui.api.IGuiHolder;
 import com.cleanroommc.modularui.api.IPanelHandler;
 import com.cleanroommc.modularui.api.drawable.IKey;
+import com.cleanroommc.modularui.api.widget.IWidget;
 import com.cleanroommc.modularui.factory.AbstractUIFactory;
 import com.cleanroommc.modularui.factory.GuiData;
 import com.cleanroommc.modularui.factory.GuiManager;
@@ -124,8 +125,9 @@ public class FakePlayerManagerUI extends AbstractUIFactory<GuiData> {
         @SuppressWarnings("rawtypes")
         private ListWidget buildBotList(FakePlayerManagerService service, ManagerState state) {
             List<String> botNames = service.listBotNames();
-            ListWidget list = new ListWidget();
-            list.top(38)
+            ListWidget<IWidget, ?> list = new ListWidget<>();
+            list.scrollDirection(new VerticalScrollData(true))
+                .top(38)
                 .left(4)
                 .size(110, 140);
             if (botNames.isEmpty()) {
@@ -190,12 +192,13 @@ public class FakePlayerManagerUI extends AbstractUIFactory<GuiData> {
                         .top(106)
                         .left(2))
                 .child(
-                    new ButtonWidget<>().size(60, 18)
-                        .overlay(IKey.str("影分身"))
+                    new ButtonWidget<>().size(78, 18)
+                        .overlay(IKey.str("\u5b8c\u5168\u6e05\u9664"))
                         .syncHandler(new InteractionSyncHandler().setOnMousePressed(mouseData -> {
                             if (mouseData.mouseButton != 0 || mouseData.isClient()) return;
                             try {
-                                state.statusMessage = service.shadowBot(player, state.selectedBotName);
+                                state.statusMessage = service.purgeBot(player, state.selectedBotName);
+                                state.selectedBotName = service.defaultSelectedBotName();
                             } catch (CommandException e) {
                                 state.statusMessage = e.getMessage();
                             }
@@ -434,7 +437,8 @@ public class FakePlayerManagerUI extends AbstractUIFactory<GuiData> {
                         }
                         FakePlayerManagerService.BotDetails d = service.describeBot(state.selectedBotName);
                         try {
-                            state.statusMessage = service.toggleMonsterRepel(player, state.selectedBotName, !d.monsterRepelling);
+                            state.statusMessage = service
+                                .toggleMonsterRepel(player, state.selectedBotName, !d.monsterRepelling);
                         } catch (CommandException e) {
                             state.statusMessage = e.getMessage();
                         }
@@ -443,14 +447,13 @@ public class FakePlayerManagerUI extends AbstractUIFactory<GuiData> {
                     .top(16)
                     .left(2));
 
-            col.child(
-                new TextWidget(IKey.dynamic(() -> {
-                    if (!hasSelectedBot(service, state)) return "范围: -";
-                    FakePlayerManagerService.BotDetails d = service.describeBot(state.selectedBotName);
-                    return "范围: " + d.monsterRepelRange + "格";
-                })).top(16)
-                    .left(76)
-                    .size(70, 12));
+            col.child(new TextWidget(IKey.dynamic(() -> {
+                if (!hasSelectedBot(service, state)) return "范围: -";
+                FakePlayerManagerService.BotDetails d = service.describeBot(state.selectedBotName);
+                return "范围: " + d.monsterRepelRange + "格";
+            })).top(16)
+                .left(76)
+                .size(70, 12));
 
             String[] rangeLabels = { "32", "64", "128", "256", "400" };
             int[] rangeValues = { 32, 64, 128, 256, 400 };
@@ -471,7 +474,8 @@ public class FakePlayerManagerUI extends AbstractUIFactory<GuiData> {
                                 return;
                             }
                             try {
-                                state.statusMessage = service.setMonsterRepelRange(player, state.selectedBotName, range);
+                                state.statusMessage = service
+                                    .setMonsterRepelRange(player, state.selectedBotName, range);
                             } catch (CommandException e) {
                                 state.statusMessage = e.getMessage();
                             }
@@ -606,23 +610,27 @@ public class FakePlayerManagerUI extends AbstractUIFactory<GuiData> {
             }
 
             // Status text
-            col.child(
-                new TextWidget(IKey.dynamic(() -> {
-                    if (!hasSelectedBot(service, state)) return "选择假人以查看状态。";
-                    FakePlayerManagerService.BotDetails d = service.describeBot(state.selectedBotName);
-                    StringBuilder sb = new StringBuilder();
-                    if (d.monsterRepelling) {
-                        sb.append("驱逐中(").append(d.monsterRepelRange).append("格) ");
-                    }
-                    if (d.following) {
-                        sb.append("跟随中 距离:").append(d.followRange).append(" 传送:").append(d.teleportRange);
-                    } else {
-                        sb.append("未跟随");
-                    }
-                    return sb.toString();
-                })).top(104)
-                    .left(2)
-                    .size(290, 30));
+            col.child(new TextWidget(IKey.dynamic(() -> {
+                if (!hasSelectedBot(service, state)) return "选择假人以查看状态。";
+                FakePlayerManagerService.BotDetails d = service.describeBot(state.selectedBotName);
+                StringBuilder sb = new StringBuilder();
+                if (d.monsterRepelling) {
+                    sb.append("驱逐中(")
+                        .append(d.monsterRepelRange)
+                        .append("格) ");
+                }
+                if (d.following) {
+                    sb.append("跟随中 距离:")
+                        .append(d.followRange)
+                        .append(" 传送:")
+                        .append(d.teleportRange);
+                } else {
+                    sb.append("未跟随");
+                }
+                return sb.toString();
+            })).top(104)
+                .left(2)
+                .size(290, 30));
 
             return col;
         }

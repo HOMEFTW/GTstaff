@@ -50,9 +50,11 @@ class FakePlayerRegistryTest {
     void saveAndLoadRestoresPersistedOwnerMappings(@TempDir File tempDir) {
         UUID ownerOne = UUID.randomUUID();
         UUID ownerTwo = UUID.randomUUID();
+        UUID profileOne = UUID.randomUUID();
+        UUID profileTwo = UUID.randomUUID();
 
-        FakePlayerRegistry.register(fakePlayer("Alpha"), ownerOne);
-        FakePlayerRegistry.register(fakePlayer("Beta"), ownerTwo);
+        FakePlayerRegistry.register(fakePlayer("Alpha", profileOne), ownerOne);
+        FakePlayerRegistry.register(fakePlayer("Beta", profileTwo), ownerTwo);
 
         File file = new File(tempDir, "gtstaff_registry.dat");
         FakePlayerRegistry.save(file);
@@ -62,7 +64,26 @@ class FakePlayerRegistryTest {
 
         assertEquals(ownerOne, FakePlayerRegistry.getOwnerUUID("alpha"));
         assertEquals(ownerTwo, FakePlayerRegistry.getOwnerUUID("BETA"));
+        assertEquals(profileOne, FakePlayerRegistry.getProfileId("alpha"));
+        assertEquals(profileTwo, FakePlayerRegistry.getProfileId("BETA"));
         assertEquals(0, FakePlayerRegistry.getCount());
+    }
+
+    @Test
+    void containsTracksPersistedBotsAfterLoadAndUnregister(@TempDir File tempDir) {
+        FakePlayerRegistry.register(fakePlayer("Alpha"), null);
+
+        File file = new File(tempDir, "gtstaff_registry.dat");
+        FakePlayerRegistry.save(file);
+
+        FakePlayerRegistry.clear();
+        FakePlayerRegistry.load(file);
+
+        assertTrue(FakePlayerRegistry.contains("alpha"));
+
+        FakePlayerRegistry.unregister("Alpha");
+
+        assertTrue(!FakePlayerRegistry.contains("alpha"));
     }
 
     @Test
