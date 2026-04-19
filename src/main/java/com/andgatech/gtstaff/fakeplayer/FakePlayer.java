@@ -42,9 +42,7 @@ public class FakePlayer extends EntityPlayerMP {
     public static FakePlayer createFake(String username, MinecraftServer server, ChunkCoordinates pos, float yaw,
         float pitch, int dimension, WorldSettings.GameType gamemode, boolean flying) {
         String safeUsername = username == null ? "" : username;
-        GameProfile profile = new GameProfile(
-            EntityPlayer.func_146094_a(new GameProfile(null, safeUsername)),
-            safeUsername);
+        GameProfile profile = FakePlayerProfiles.createSpawnProfile(safeUsername);
         ChunkCoordinates spawnPoint = pos;
         FakePlayer fakePlayer = createWithProfile(
             profile,
