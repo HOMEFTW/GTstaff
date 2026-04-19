@@ -1,17 +1,12 @@
 ﻿## 2026-04-18：调研记录
 
-### 后续可评估方向
-- [ ] 如果 `/player` 命令继续增长，评估把 `CommandPlayer` 拆为带子命令和细粒度权限节点的命令框架
-- [ ] 如果 fake player 需要巡逻、路线或自动到达，评估引入 waypoint / path navigation 层，而不是只靠现在的 `moveForward` / `moveStrafing`
-- [ ] 如果 UI 继续复杂化，评估是否为 MUI2 增加可序列化面板状态或 bot 模板持久化能力
 
-### 已完成
-- [x] 阅读 `CustomNPC-Plus-master` 源码并完成一次对 `GTstaff` 的可借鉴点调研
 # TODO 列表
 
 
 
 ## 已完成
+- [x] 阅读 `SkinPort-master` 源码并加入轻量可选兼容：新生成的 fake player 会在安装 `SkinPort` 时按 bot 名尝试解析正版 `GameProfile` 皮肤资料；未安装、解析失败或无纹理时静默回退到现有离线 profile，且不改持久化恢复路径
 - [x] 补齐缺失的假人命令入口：新增 `repel`、`inventory`，并为 `monitor` 增加 `scan` 与 `interval`；同时把 `stopattack`、`stopuse` 写入 `/player` 用法字符串
 - [x] 扩展“完全清除”对 `playerdata` 的删除范围：额外删除 `<假人名>.tf` 与 `<假人名>.tfback`
 - [x] 阅读 `ServerUtilities-master` 源码并加入兼容：让 GTstaff 生成的 fake player 被 `serverutils.lib.util.ServerUtils.isFake(...)` 识别为 fake player，不计入 ServerUtilities 统计

@@ -111,6 +111,27 @@
 
 ---
 
+## 2026-04-19：新增 SkinPort 轻量皮肤兼容
+
+### 已完成
+- 阅读 `SkinPort-master` 源码，确认其客户端最终依赖玩家 `GameProfile` 中的完整皮肤资料，而不是 GTstaff 侧专门改渲染
+- 新增 `SkinPortCompat`，通过反射可选调用 `lain.mods.skins.impl.MojangService.getProfile(String)` 与 `fillProfile(GameProfile)`，在安装 `SkinPort` 时按 bot 名解析正版皮肤资料
+- 新增 `FakePlayerProfiles`，把“新生成 fake player 用哪个 `GameProfile`”从 `FakePlayer.createFake(...)` 中抽离；优先使用带 `textures` 的正版 profile，失败时回退到现有离线 UUID profile
+- 为避免共享可变状态，`FakePlayerProfiles` 在使用解析到的 profile 前会复制一份 `GameProfile` 和属性表，再交给假人创建链路
+- 新增 `SkinPortCompatTest` 与 `FakePlayerProfilesTest`，覆盖未安装/返回空/无纹理/bridge 异常/反射 future/中断回退，以及“使用正版 profile”与“回退离线 profile”两条生成路径
+- 通过 `./gradlew.bat --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true test --tests com.andgatech.gtstaff.integration.SkinPortCompatTest`
+- 通过 `./gradlew.bat --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true test --tests com.andgatech.gtstaff.integration.SkinPortCompatTest --tests com.andgatech.gtstaff.fakeplayer.FakePlayerProfilesTest`
+
+### 遇到的问题
+- `Gradle` 在沙箱里首次运行会因为无法写用户目录下的 wrapper/cache lock 而失败，后续统一改为使用允许访问本地 Gradle 缓存的提权命令做验证
+- `SkinPort` 不是 GTNH 默认模组，必须避免任何硬依赖类加载；因此兼容层不能直接 import 它的实现类，只能通过反射软连接
+- 如果直接复用 compat 返回的 `GameProfile` 引用，后续一旦接入缓存或重复复用，同一份属性表可能在不同 fake player 生成之间共享并互相污染
+
+### 做出的决定
+- 本轮只做“新生成假人按名字取正版皮肤”，明确不改 `restorePersisted(...)` 的重启恢复链路
+- `SkinPortCompat` 的失败语义统一为静默回退到 `Optional.empty()`，包括未安装、反射失败、future 异常、中断和无 `textures` 资料
+- `FakePlayer.createFake(...)` 只通过 `FakePlayerProfiles` 选择 profile，不把 `SkinPort` 兼容细节散落进实体创建代码
+
 ## 2026-04-18：敌对生物驱逐器功能
 
 ### 已完成

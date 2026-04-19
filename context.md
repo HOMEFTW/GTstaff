@@ -25,8 +25,14 @@
 - `FakeNetworkManager`：空壳网络连接，使用 `EmbeddedChannel`
 - `FakeNetHandlerPlayServer`：在 idle / duplicate login 文本踢出时回收 fake player
 - `FakePlayer`：支持 `createFake`、`createShadow`、owner 绑定、自动重生、自杀清理、机器监控挂接、敌对生物驱逐（`monsterRepelling`/`monsterRepelRange`），以及基于持久化快照的 `restorePersisted(...)`
+- `FakePlayerProfiles`：集中处理“新生成 fake player 应该使用哪个 `GameProfile`”；当前会优先走 `SkinPortCompat.resolveProfile(name)`，拿到正版皮肤 profile 后复制一份再用于创建假人，失败则回退到离线 UUID profile
 - `FakePlayer.runLivingUpdate(...)`：在 `EntityPlayerMP.onUpdate()` 之后直接执行 `onLivingUpdate()`，补上 fake player 的移动/跳跃/碰撞链路，但不再调用 `onUpdateEntity()` 触发第二次 `PlayerTickEvent`
 - `PlayerActionPack`：支持 `USE`、`ATTACK`、`JUMP`、`DROP_ITEM`、`DROP_STACK`，包含 `turn`、`stopMovement`、`setSlot` 与挖掘状态机
+
+### SkinPort 兼容
+- `SkinPortCompat`：通过反射可选接入 `lain.mods.skins.impl.MojangService`，调用 `getProfile(String)` + `fillProfile(GameProfile)` 获取带 `textures` 的正版 `GameProfile`
+- `SkinPortCompat.resolveProfile(...)`：在未安装 `SkinPort`、反射失败、future 中断/异常、返回 profile 为空或无 `textures` 时统一降级为 `Optional.empty()`
+- 当前皮肤支持范围仅限“新生成 fake player”；`restorePersisted(...)` 不会在服务端重启恢复时重新联网取皮肤，这属于本轮设计边界
 
 ### ServerUtilities 兼容
 - `ServerUtilitiesCompat.isFakePlayer(EntityPlayerMP)`：将 GTstaff 的 `FakePlayer` 暴露为可供 ServerUtilities 判断的兼容入口
@@ -124,9 +130,11 @@
 - `src/test/java/com/andgatech/gtstaff/fakeplayer/ActionTest.java`
 - `src/test/java/com/andgatech/gtstaff/fakeplayer/FakePlayerMovementUpdateTest.java`
 - `src/test/java/com/andgatech/gtstaff/fakeplayer/FakeNetworkManagerTest.java`
+- `src/test/java/com/andgatech/gtstaff/fakeplayer/FakePlayerProfilesTest.java`
 - `src/test/java/com/andgatech/gtstaff/fakeplayer/FakePlayerRegistryTest.java`
 - `src/test/java/com/andgatech/gtstaff/fakeplayer/MachineMonitorServiceTest.java`
 - `src/test/java/com/andgatech/gtstaff/fakeplayer/PlayerActionPackTest.java`
+- `src/test/java/com/andgatech/gtstaff/integration/SkinPortCompatTest.java`
 - `src/test/java/com/andgatech/gtstaff/integration/ServerUtilitiesCompatTest.java`
 - `src/test/java/com/andgatech/gtstaff/command/CommandPlayerTest.java`
 - `src/test/java/com/andgatech/gtstaff/ClientProxyTest.java`
