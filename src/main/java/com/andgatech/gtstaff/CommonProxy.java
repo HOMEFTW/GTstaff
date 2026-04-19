@@ -10,6 +10,7 @@ import com.andgatech.gtstaff.command.CommandPlayer;
 import com.andgatech.gtstaff.config.Config;
 import com.andgatech.gtstaff.fakeplayer.FakePlayerRegistry;
 import com.andgatech.gtstaff.fakeplayer.FakePlayerRestoreScheduler;
+import com.andgatech.gtstaff.fakeplayer.FakePlayerSkinRestoreScheduler;
 import com.andgatech.gtstaff.fakeplayer.MonsterRepellentService;
 import com.andgatech.gtstaff.ui.FakePlayerInventoryGuiHandler;
 
@@ -52,6 +53,7 @@ public class CommonProxy {
 
     public void serverStopping(FMLServerStoppingEvent event) {
         FakePlayerRestoreScheduler.cancel();
+        FakePlayerSkinRestoreScheduler.cancelAll();
         FakePlayerRegistry.save(getRegistryFile());
     }
 

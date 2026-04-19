@@ -22,6 +22,8 @@ class SkinPortCompatTest {
     @AfterEach
     void clearBridge() {
         SkinPortCompat.setBridgeForTests(null);
+        SkinPortCompat.setSecureFillerForTests(null);
+        SkinPortCompat.setFallbackResolverForTests(null);
         FakeMojangService.reset();
         Thread.interrupted();
     }
@@ -45,24 +47,43 @@ class SkinPortCompatTest {
     }
 
     @Test
-    void availableBridgeReturningProfileWithTexturesReturnsProfile() {
-        GameProfile expected = createProfileWithTextures();
-        SkinPortCompat.setBridgeForTests(name -> expected);
+    void resolveProfileUsesSecurelyFilledProfile() {
+        GameProfile resolved = new GameProfile(UUID.randomUUID(), "test-player");
+        GameProfile signed = createProfileWithSignedTextures();
+        SkinPortCompat.setBridgeForTests(name -> resolved);
+        SkinPortCompat.setSecureFillerForTests(profile -> signed);
 
         Optional<GameProfile> profile = SkinPortCompat.resolveProfile("test-player");
 
         assertTrue(profile.isPresent());
-        assertSame(expected, profile.get());
+        assertSame(signed, profile.get());
     }
 
     @Test
-    void rejectsProfilesWithoutTextureProperties() {
-        GameProfile profileWithoutTextures = new GameProfile(UUID.randomUUID(), "test-player");
-        SkinPortCompat.setBridgeForTests(name -> profileWithoutTextures);
+    void rejectsSecureFillResultsWithoutSignedTextures() {
+        GameProfile resolved = new GameProfile(UUID.randomUUID(), "test-player");
+        GameProfile unsigned = new GameProfile(resolved.getId(), "test-player");
+        unsigned.getProperties().put("textures", new Property("textures", "dummy"));
+        SkinPortCompat.setBridgeForTests(name -> resolved);
+        SkinPortCompat.setSecureFillerForTests(profile -> unsigned);
 
         Optional<GameProfile> profile = SkinPortCompat.resolveProfile("test-player");
 
         assertFalse(profile.isPresent());
+    }
+
+    @Test
+    void fallsBackToServerResolverWhenBridgeIsUnavailable() {
+        GameProfile resolved = new GameProfile(UUID.randomUUID(), "test-player");
+        GameProfile signed = createProfileWithSignedTextures();
+        SkinPortCompat.setBridgeForTests(SkinPortCompat.unavailable());
+        SkinPortCompat.setFallbackResolverForTests(name -> resolved);
+        SkinPortCompat.setSecureFillerForTests(profile -> signed);
+
+        Optional<GameProfile> profile = SkinPortCompat.resolveProfile("test-player");
+
+        assertTrue(profile.isPresent());
+        assertSame(signed, profile.get());
     }
 
     @Test
@@ -77,27 +98,25 @@ class SkinPortCompatTest {
     }
 
     @Test
-    void reflectionBridgeResolvesFilledProfileFromListenableFuture() {
+    void reflectionBridgeResolvesProfileFromListenableFuture() {
         GameProfile resolved = new GameProfile(UUID.randomUUID(), "test-player");
-        GameProfile filled = createProfileWithTextures();
         FakeMojangService.resolvedProfile = resolved;
-        FakeMojangService.filledProfile = filled;
         SkinPortCompat.setBridgeForTests(
             SkinPortCompat.createBridge(FakeMojangService.class.getName(), FakeMojangService.class.getClassLoader()));
 
-        Optional<GameProfile> profile = SkinPortCompat.resolveProfile("test-player");
+        GameProfile profile = SkinPortCompat.createBridge(
+            FakeMojangService.class.getName(),
+            FakeMojangService.class.getClassLoader()).resolveProfile("test-player");
 
-        assertTrue(profile.isPresent());
-        assertSame(filled, profile.get());
-        assertSame(resolved, FakeMojangService.receivedProfile);
+        assertSame(resolved, profile);
     }
 
     @Test
     void reflectionBridgeFallsBackWhenRequiredMethodsAreMissing() {
         SkinPortCompat.setBridgeForTests(
             SkinPortCompat.createBridge(
-                MissingFillProfileService.class.getName(),
-                MissingFillProfileService.class.getClassLoader()));
+                MissingGetProfileService.class.getName(),
+                MissingGetProfileService.class.getClassLoader()));
 
         Optional<GameProfile> profile = SkinPortCompat.resolveProfile("test-player");
 
@@ -121,37 +140,28 @@ class SkinPortCompatTest {
         }
     }
 
-    private static GameProfile createProfileWithTextures() {
+    private static GameProfile createProfileWithSignedTextures() {
         GameProfile profile = new GameProfile(null, "test-player");
-        profile.getProperties().put("textures", new Property("textures", "dummy"));
+        profile.getProperties().put("textures", new Property("textures", "dummy", "signature"));
         return profile;
     }
 
     public static final class FakeMojangService {
 
         private static GameProfile resolvedProfile;
-        private static GameProfile filledProfile;
-        private static GameProfile receivedProfile;
 
         public static ListenableFuture<GameProfile> getProfile(String playerName) {
             return Futures.immediateFuture(resolvedProfile);
         }
 
-        public static ListenableFuture<GameProfile> fillProfile(GameProfile profile) {
-            receivedProfile = profile;
-            return Futures.immediateFuture(filledProfile);
-        }
-
         private static void reset() {
             resolvedProfile = null;
-            filledProfile = null;
-            receivedProfile = null;
         }
     }
 
-    public static final class MissingFillProfileService {
+    public static final class MissingGetProfileService {
 
-        public static ListenableFuture<GameProfile> getProfile(String playerName) {
+        public static ListenableFuture<GameProfile> fillProfile(GameProfile profile) {
             return Futures.immediateFuture(null);
         }
     }
@@ -160,10 +170,6 @@ class SkinPortCompatTest {
 
         public static ListenableFuture<GameProfile> getProfile(String playerName) {
             return new InterruptingFuture();
-        }
-
-        public static ListenableFuture<GameProfile> fillProfile(GameProfile profile) {
-            return Futures.immediateFuture(profile);
         }
     }
 

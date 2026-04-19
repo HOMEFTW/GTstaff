@@ -1,6 +1,9 @@
 package com.andgatech.gtstaff.fakeplayer;
 
-import java.util.function.Consumer;
+import java.util.Collections;
+import java.util.List;
+import java.util.function.BiConsumer;
+import java.util.function.Function;
 
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.server.MinecraftServer;
@@ -14,7 +17,8 @@ public final class FakePlayerRestoreScheduler {
 
     public static final FakePlayerRestoreScheduler INSTANCE = new FakePlayerRestoreScheduler();
 
-    private static Consumer<MinecraftServer> restoreAction = FakePlayerRegistry::restorePersisted;
+    private static Function<MinecraftServer, List<FakePlayer>> restoreAction = FakePlayerRegistry::restorePersisted;
+    private static BiConsumer<MinecraftServer, FakePlayer> skinScheduleAction = FakePlayerSkinRestoreScheduler::schedule;
     private static MinecraftServer pendingServer;
     private static boolean registered;
 
@@ -55,7 +59,15 @@ public final class FakePlayerRestoreScheduler {
         }
 
         pendingServer = null;
-        restoreAction.accept(server);
+        List<FakePlayer> restoredBots = restoreAction.apply(server);
+        if (restoredBots == null) {
+            restoredBots = Collections.emptyList();
+        }
+        for (FakePlayer fakePlayer : restoredBots) {
+            if (fakePlayer != null) {
+                skinScheduleAction.accept(server, fakePlayer);
+            }
+        }
     }
 
     private static boolean isReady(MinecraftServer server) {
@@ -80,13 +92,18 @@ public final class FakePlayerRestoreScheduler {
         return false;
     }
 
-    static void setRestoreActionForTesting(Consumer<MinecraftServer> action) {
+    static void setRestoreActionForTesting(Function<MinecraftServer, List<FakePlayer>> action) {
         restoreAction = action == null ? FakePlayerRegistry::restorePersisted : action;
+    }
+
+    static void setSkinScheduleActionForTesting(BiConsumer<MinecraftServer, FakePlayer> action) {
+        skinScheduleAction = action == null ? FakePlayerSkinRestoreScheduler::schedule : action;
     }
 
     static void resetForTesting() {
         pendingServer = null;
         restoreAction = FakePlayerRegistry::restorePersisted;
+        skinScheduleAction = FakePlayerSkinRestoreScheduler::schedule;
         registered = false;
     }
 }

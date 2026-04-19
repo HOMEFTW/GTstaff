@@ -23,19 +23,35 @@ final class FakePlayerProfiles {
 
     static GameProfile createSpawnProfile(String username) {
         String safeUsername = username == null ? "" : username;
-        Optional<GameProfile> resolvedProfile = resolver.resolve(safeUsername);
+        Optional<GameProfile> resolvedProfile = resolveSkinProfile(safeUsername);
         if (resolvedProfile.isPresent()) {
-            return copyOf(resolvedProfile.get());
+            return resolvedProfile.get();
         }
         return new GameProfile(EntityPlayer.func_146094_a(new GameProfile(null, safeUsername)), safeUsername);
+    }
+
+    static Optional<GameProfile> resolveSkinProfile(String username) {
+        String safeUsername = username == null ? "" : username;
+        Optional<GameProfile> resolvedProfile = resolver.resolve(safeUsername);
+        if (!resolvedProfile.isPresent()) {
+            return Optional.empty();
+        }
+        return Optional.of(copyOf(resolvedProfile.get(), safeUsername));
     }
 
     static void setResolverForTests(ProfileResolver testResolver) {
         resolver = testResolver == null ? DEFAULT_RESOLVER : testResolver;
     }
 
-    private static GameProfile copyOf(GameProfile profile) {
-        GameProfile copy = new GameProfile(profile.getId(), profile.getName());
+    static GameProfile copyOf(GameProfile profile) {
+        return copyOf(profile, profile == null ? null : profile.getName());
+    }
+
+    static GameProfile copyOf(GameProfile profile, String name) {
+        if (profile == null) {
+            return null;
+        }
+        GameProfile copy = new GameProfile(profile.getId(), name == null ? profile.getName() : name);
         copy.getProperties().putAll(profile.getProperties());
         return copy;
     }

@@ -46,4 +46,17 @@ class FakePlayerProfilesTest {
         assertEquals(EntityPlayer.func_146094_a(new GameProfile(null, "FallbackBot")), profile.getId());
         assertTrue(profile.getProperties().isEmpty());
     }
+
+    @Test
+    void resolveSkinProfileReturnsCopiedProfileWhenAvailable() {
+        GameProfile filledProfile = new GameProfile(UUID.randomUUID(), "SkinBot");
+        filledProfile.getProperties().put("textures", new Property("textures", "value", "signature"));
+        FakePlayerProfiles.setResolverForTests(username -> Optional.of(filledProfile));
+
+        Optional<GameProfile> resolved = FakePlayerProfiles.resolveSkinProfile("SkinBot");
+
+        assertTrue(resolved.isPresent());
+        assertNotSame(filledProfile, resolved.get());
+        assertEquals("value", resolved.get().getProperties().get("textures").iterator().next().getValue());
+    }
 }

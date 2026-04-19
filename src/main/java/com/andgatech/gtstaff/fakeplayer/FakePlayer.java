@@ -20,6 +20,132 @@ import com.mojang.authlib.GameProfile;
 
 public class FakePlayer extends EntityPlayerMP {
 
+    @FunctionalInterface
+    interface RestoreFactory {
+
+        FakePlayer create(MinecraftServer server, GameProfile profile, RestoreState state);
+    }
+
+    static final class RestoreState {
+
+        private final String name;
+        private final UUID ownerUUID;
+        private final int dimension;
+        private final double posX;
+        private final double posY;
+        private final double posZ;
+        private final float yaw;
+        private final float pitch;
+        private final WorldSettings.GameType gameType;
+        private final boolean flying;
+        private final boolean monitoring;
+        private final int monitorRange;
+        private final int reminderInterval;
+        private final boolean monsterRepelling;
+        private final int monsterRepelRange;
+        private final UUID followTarget;
+        private final int followRange;
+        private final int teleportRange;
+
+        private RestoreState(String name, UUID ownerUUID, int dimension, double posX, double posY, double posZ, float yaw,
+            float pitch, WorldSettings.GameType gameType, boolean flying, boolean monitoring, int monitorRange,
+            int reminderInterval, boolean monsterRepelling, int monsterRepelRange, UUID followTarget, int followRange,
+            int teleportRange) {
+            this.name = name;
+            this.ownerUUID = ownerUUID;
+            this.dimension = dimension;
+            this.posX = posX;
+            this.posY = posY;
+            this.posZ = posZ;
+            this.yaw = yaw;
+            this.pitch = pitch;
+            this.gameType = gameType;
+            this.flying = flying;
+            this.monitoring = monitoring;
+            this.monitorRange = monitorRange;
+            this.reminderInterval = reminderInterval;
+            this.monsterRepelling = monsterRepelling;
+            this.monsterRepelRange = monsterRepelRange;
+            this.followTarget = followTarget;
+            this.followRange = followRange;
+            this.teleportRange = teleportRange;
+        }
+
+        private static RestoreState capture(FakePlayer fakePlayer) {
+            FollowService followService = fakePlayer.getFollowService();
+            UUID followTarget = followService != null && fakePlayer.isFollowing() ? followService.getFollowTargetUUID()
+                : null;
+            int followRange = followService == null ? FollowService.DEFAULT_FOLLOW_RANGE : followService.getFollowRange();
+            int teleportRange = followService == null ? FollowService.DEFAULT_TELEPORT_RANGE
+                : followService.getTeleportRange();
+            WorldSettings.GameType gameType = fakePlayer.theItemInWorldManager == null ? null
+                : fakePlayer.theItemInWorldManager.getGameType();
+            return new RestoreState(
+                fakePlayer.getCommandSenderName(),
+                fakePlayer.getOwnerUUID(),
+                fakePlayer.dimension,
+                fakePlayer.posX,
+                fakePlayer.posY,
+                fakePlayer.posZ,
+                fakePlayer.rotationYaw,
+                fakePlayer.rotationPitch,
+                gameType,
+                fakePlayer.capabilities != null && fakePlayer.capabilities.isFlying,
+                fakePlayer.isMonitoring(),
+                fakePlayer.getMonitorRange(),
+                fakePlayer.getReminderInterval(),
+                fakePlayer.isMonsterRepelling(),
+                fakePlayer.getMonsterRepelRange(),
+                followTarget,
+                followRange,
+                teleportRange);
+        }
+
+        private static RestoreState fromPersistedData(FakePlayerRegistry.PersistedBotData data) {
+            return new RestoreState(
+                data.getName(),
+                data.getOwnerUUID(),
+                data.getDimension(),
+                data.getPosX(),
+                data.getPosY(),
+                data.getPosZ(),
+                data.getYaw(),
+                data.getPitch(),
+                WorldSettings.GameType.getByID(data.getGameTypeId()),
+                data.isFlying(),
+                data.isMonitoring(),
+                data.getMonitorRange(),
+                data.getReminderInterval(),
+                data.isMonsterRepelling(),
+                data.getMonsterRepelRange(),
+                data.getFollowTarget(),
+                data.getFollowRange(),
+                data.getTeleportRange());
+        }
+
+        private void applyTo(FakePlayer fakePlayer) {
+            fakePlayer.setOwnerUUID(this.ownerUUID);
+            fakePlayer.setMonitoring(this.monitoring);
+            fakePlayer.setMonitorRange(this.monitorRange);
+            fakePlayer.setReminderInterval(this.reminderInterval);
+            fakePlayer.setMonsterRepelling(this.monsterRepelling);
+            fakePlayer.setMonsterRepelRange(this.monsterRepelRange);
+            FollowService followService = fakePlayer.getFollowService();
+            if (followService != null) {
+                followService.setFollowRange(this.followRange);
+                followService.setTeleportRange(this.teleportRange);
+                if (this.followTarget != null) {
+                    followService.startFollowing(this.followTarget);
+                } else {
+                    followService.stop();
+                }
+            }
+        }
+    }
+
+    private static final RestoreFactory DEFAULT_RESTORE_FACTORY = FakePlayer::createRestoredFromState;
+    private static volatile RestoreFactory restoreFactory = DEFAULT_RESTORE_FACTORY;
+
     private UUID ownerUUID;
     private final MachineMonitorService machineMonitorService;
     private final FollowService followService = new FollowService(this);
@@ -111,23 +237,37 @@ public class FakePlayer extends EntityPlayerMP {
             profileId = EntityPlayer.func_146094_a(new GameProfile(null, data.getName()));
         }
 
-        FakePlayer fakePlayer = createWithProfile(
-            new GameProfile(profileId, data.getName()),
-            server,
-            data.getPosX(),
-            data.getPosY(),
-            data.getPosZ(),
-            data.getYaw(),
-            data.getPitch(),
-            data.getDimension(),
-            WorldSettings.GameType.getByID(data.getGameTypeId()),
-            data.isFlying());
-        fakePlayer.setOwnerUUID(data.getOwnerUUID());
-        fakePlayer.setMonitoring(data.isMonitoring());
-        fakePlayer.setMonitorRange(data.getMonitorRange());
+        RestoreState restoreState = RestoreState.fromPersistedData(data);
+        FakePlayer fakePlayer = restoreFactory.create(server, new GameProfile(profileId, data.getName()), restoreState);
+        if (fakePlayer == null) {
+            return null;
+        }
+        restoreState.applyTo(fakePlayer);
         fakePlayer.replaceExistingRegistryEntry();
         fakePlayer.respawnFake();
         return fakePlayer;
+    }
+
+    public static FakePlayer rebuildRestoredWithProfile(MinecraftServer server, FakePlayer oldBot, GameProfile profile) {
+        if (server == null || oldBot == null || profile == null) {
+            return oldBot;
+        }
+        String botName = oldBot.getCommandSenderName();
+        if (botName == null || FakePlayerRegistry.getFakePlayer(botName) != oldBot) {
+            return oldBot;
+        }
+
+        RestoreState restoreState = RestoreState.capture(oldBot);
+        FakePlayer rebuilt = restoreFactory.create(server, FakePlayerProfiles.copyOf(profile, restoreState.name), restoreState);
+        if (rebuilt == null) {
+            return oldBot;
+        }
+
+        restoreState.applyTo(rebuilt);
+        rebuilt.respawnFake();
+        oldBot.kill();
+        FakePlayerRegistry.register(rebuilt, restoreState.ownerUUID);
+        return rebuilt;
     }
 
     public void respawnFake() {
@@ -263,6 +403,10 @@ public class FakePlayer extends EntityPlayerMP {
         return this.followService != null && this.followService.isFollowing();
     }
 
+    static void setRestoreFactoryForTests(RestoreFactory testFactory) {
+        restoreFactory = testFactory == null ? DEFAULT_RESTORE_FACTORY : testFactory;
+    }
+
     private static final EnumChatFormatting[] BOT_COLORS = { EnumChatFormatting.GREEN, EnumChatFormatting.AQUA,
         EnumChatFormatting.LIGHT_PURPLE, EnumChatFormatting.GOLD, EnumChatFormatting.YELLOW, EnumChatFormatting.BLUE,
         EnumChatFormatting.RED, EnumChatFormatting.DARK_AQUA, EnumChatFormatting.DARK_GREEN,
@@ -347,6 +491,23 @@ public class FakePlayer extends EntityPlayerMP {
         if (existing != null && existing != this) {
             existing.kill();
         }
+    }
+
+    private static FakePlayer createRestoredFromState(MinecraftServer server, GameProfile profile, RestoreState state) {
+        if (server == null || profile == null || state == null) {
+            return null;
+        }
+        return createWithProfile(
+            FakePlayerProfiles.copyOf(profile, state.name),
+            server,
+            state.posX,
+            state.posY,
+            state.posZ,
+            state.yaw,
+            state.pitch,
+            state.dimension,
+            state.gameType,
+            state.flying);
     }
 
     private static FakePlayer createWithProfile(GameProfile profile, MinecraftServer server, double x, double y,

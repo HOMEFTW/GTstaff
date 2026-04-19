@@ -3,7 +3,8 @@ package com.andgatech.gtstaff.fakeplayer;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -38,8 +39,8 @@ public class FakePlayerRegistry {
     private static final String FOLLOW_RANGE_KEY = "FollowRange";
     private static final String TELEPORT_RANGE_KEY = "TeleportRange";
 
-    private static final Map<String, FakePlayer> fakePlayers = new HashMap<String, FakePlayer>();
-    private static final Map<String, PersistedBotData> persistedBots = new HashMap<String, PersistedBotData>();
+    private static final Map<String, FakePlayer> fakePlayers = new LinkedHashMap<String, FakePlayer>();
+    private static final Map<String, PersistedBotData> persistedBots = new LinkedHashMap<String, PersistedBotData>();
 
     @FunctionalInterface
     public interface BotRestorer {
@@ -238,7 +239,7 @@ public class FakePlayerRegistry {
 
         NBTTagCompound root = new NBTTagCompound();
         NBTTagList botList = new NBTTagList();
-        Map<String, PersistedBotData> snapshotByName = new HashMap<String, PersistedBotData>(persistedBots);
+        Map<String, PersistedBotData> snapshotByName = new LinkedHashMap<String, PersistedBotData>(persistedBots);
         for (FakePlayer fakePlayer : fakePlayers.values()) {
             snapshotByName
                 .put(normalize(fakePlayer.getCommandSenderName()), snapshot(fakePlayer, fakePlayer.getOwnerUUID()));
@@ -376,13 +377,14 @@ public class FakePlayerRegistry {
         }
     }
 
-    public static void restorePersisted(MinecraftServer server) {
-        restorePersisted(data -> FakePlayer.restorePersisted(server, data));
+    public static List<FakePlayer> restorePersisted(MinecraftServer server) {
+        return restorePersisted(data -> FakePlayer.restorePersisted(server, data));
     }
 
-    public static void restorePersisted(BotRestorer restorer) {
+    public static List<FakePlayer> restorePersisted(BotRestorer restorer) {
+        List<FakePlayer> restored = new ArrayList<FakePlayer>();
         if (restorer == null) {
-            return;
+            return restored;
         }
 
         for (PersistedBotData data : new ArrayList<PersistedBotData>(persistedBots.values())) {
@@ -410,7 +412,9 @@ public class FakePlayerRegistry {
                     .startFollowing(data.getFollowTarget());
             }
             register(fakePlayer, data.getOwnerUUID());
+            restored.add(fakePlayer);
         }
+        return restored;
     }
 
     private static String normalize(String name) {

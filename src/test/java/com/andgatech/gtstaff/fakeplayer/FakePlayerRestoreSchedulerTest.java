@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import java.io.File;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import net.minecraft.entity.player.EntityPlayerMP;
@@ -21,6 +22,7 @@ class FakePlayerRestoreSchedulerTest {
     @AfterEach
     void resetScheduler() {
         FakePlayerRestoreScheduler.resetForTesting();
+        FakePlayerSkinRestoreScheduler.resetForTests();
     }
 
     @Test
@@ -29,7 +31,10 @@ class FakePlayerRestoreSchedulerTest {
         TestMinecraftServer server = allocate(TestMinecraftServer.class);
         server.dedicated = true;
         setField(MinecraftServer.class, server, "serverConfigManager", new TestServerConfigurationManager(server));
-        FakePlayerRestoreScheduler.setRestoreActionForTesting(restored::add);
+        FakePlayerRestoreScheduler.setRestoreActionForTesting(minecraftServer -> {
+            restored.add(minecraftServer);
+            return Collections.emptyList();
+        });
 
         FakePlayerRestoreScheduler.schedule(server);
 
@@ -49,7 +54,10 @@ class FakePlayerRestoreSchedulerTest {
         server.dedicated = false;
         TestServerConfigurationManager configurationManager = new TestServerConfigurationManager(server);
         setField(MinecraftServer.class, server, "serverConfigManager", configurationManager);
-        FakePlayerRestoreScheduler.setRestoreActionForTesting(restored::add);
+        FakePlayerRestoreScheduler.setRestoreActionForTesting(minecraftServer -> {
+            restored.add(minecraftServer);
+            return Collections.emptyList();
+        });
 
         FakePlayerRestoreScheduler.schedule(server);
         configurationManager.playerEntityList.add(allocate(TestFakePlayer.class));
@@ -61,6 +69,31 @@ class FakePlayerRestoreSchedulerTest {
         FakePlayerRestoreScheduler.runPendingRestore();
         assertEquals(1, restored.size());
         assertEquals(server, restored.get(0));
+    }
+
+    @Test
+    void restoreSchedulerHandsRestoredBotsToSkinScheduler() {
+        List<FakePlayer> restoredBots = new ArrayList<FakePlayer>();
+        List<FakePlayer> scheduledBots = new ArrayList<FakePlayer>();
+        TestMinecraftServer server = allocate(TestMinecraftServer.class);
+        server.dedicated = true;
+        setField(MinecraftServer.class, server, "serverConfigManager", new TestServerConfigurationManager(server));
+        restoredBots.add(allocate(TestFakePlayer.class));
+        restoredBots.add(allocate(TestFakePlayer.class));
+        restoredBots.get(0).dimension = 0;
+        restoredBots.get(1).dimension = 0;
+        setField(TestFakePlayer.class, restoredBots.get(0), "name", "Alpha");
+        setField(TestFakePlayer.class, restoredBots.get(1), "name", "Beta");
+        FakePlayerRestoreScheduler.setRestoreActionForTesting(minecraftServer -> restoredBots);
+        FakePlayerRestoreScheduler
+            .setSkinScheduleActionForTesting((minecraftServer, fakePlayer) -> scheduledBots.add(fakePlayer));
+
+        FakePlayerRestoreScheduler.schedule(server);
+        FakePlayerRestoreScheduler.runPendingRestore();
+
+        assertEquals(2, scheduledBots.size());
+        assertEquals("Alpha", scheduledBots.get(0).getCommandSenderName());
+        assertEquals("Beta", scheduledBots.get(1).getCommandSenderName());
     }
 
     private static final class TestMinecraftServer extends MinecraftServer {
@@ -131,8 +164,15 @@ class FakePlayerRestoreSchedulerTest {
 
     private static final class TestFakePlayer extends FakePlayer {
 
+        private String name;
+
         private TestFakePlayer() {
             super(null, null, "test-fake");
+        }
+
+        @Override
+        public String getCommandSenderName() {
+            return name;
         }
     }
 

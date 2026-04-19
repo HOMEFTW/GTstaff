@@ -5,7 +5,7 @@
 ## 基本信息
 - Mod Name: GTstaff
 - Mod ID: gtstaff
-- Version: v0.1.1
+- Version: v1.0.1
 - Root Package: `com.andgatech.gtstaff`
 - Target: MC 1.7.10 + Forge 10.13.4.1614 + GTNH
 - GitHub: https://github.com/HOMEFTW/GTstaff
@@ -24,15 +24,19 @@
 - `Action`：支持 `once`、`continuous`、`interval`
 - `FakeNetworkManager`：空壳网络连接，使用 `EmbeddedChannel`
 - `FakeNetHandlerPlayServer`：在 idle / duplicate login 文本踢出时回收 fake player
-- `FakePlayer`：支持 `createFake`、`createShadow`、owner 绑定、自动重生、自杀清理、机器监控挂接、敌对生物驱逐（`monsterRepelling`/`monsterRepelRange`），以及基于持久化快照的 `restorePersisted(...)`
+- `FakePlayer`：支持 `createFake`、`createShadow`、owner 绑定、自动重生、自杀清理、机器监控挂接、敌对生物驱逐（`monsterRepelling`/`monsterRepelRange`）、基于持久化快照的 `restorePersisted(...)`，以及恢复后基于带 `textures` profile 的 `rebuildRestoredWithProfile(...)`
 - `FakePlayerProfiles`：集中处理“新生成 fake player 应该使用哪个 `GameProfile`”；当前会优先走 `SkinPortCompat.resolveProfile(name)`，拿到正版皮肤 profile 后复制一份再用于创建假人，失败则回退到离线 UUID profile
 - `FakePlayer.runLivingUpdate(...)`：在 `EntityPlayerMP.onUpdate()` 之后直接执行 `onLivingUpdate()`，补上 fake player 的移动/跳跃/碰撞链路，但不再调用 `onUpdateEntity()` 触发第二次 `PlayerTickEvent`
+- `FakePlayerRegistry.restorePersisted(...)`：现在会返回本轮实际恢复出的 bot 列表，并保持持久化顺序，供恢复后的补皮调度复用
 - `PlayerActionPack`：支持 `USE`、`ATTACK`、`JUMP`、`DROP_ITEM`、`DROP_STACK`，包含 `turn`、`stopMovement`、`setSlot` 与挖掘状态机
 
 ### SkinPort 兼容
-- `SkinPortCompat`：通过反射可选接入 `lain.mods.skins.impl.MojangService`，调用 `getProfile(String)` + `fillProfile(GameProfile)` 获取带 `textures` 的正版 `GameProfile`
-- `SkinPortCompat.resolveProfile(...)`：在未安装 `SkinPort`、反射失败、future 中断/异常、返回 profile 为空或无 `textures` 时统一降级为 `Optional.empty()`
-- 当前皮肤支持范围仅限“新生成 fake player”；`restorePersisted(...)` 不会在服务端重启恢复时重新联网取皮肤，这属于本轮设计边界
+- `SkinPortCompat`：通过反射可选接入 `lain.mods.skins.impl.MojangService`，但现在只把它用于按名字解析在线 `GameProfile`/UUID，不再直接信任 `SkinPort` 返回的 filled profile
+- `SkinPortCompat.resolveProfile(...)`：拿到在线 UUID 后会统一回到服务端 `MinecraftSessionService.fillProfileProperties(profile, true)` 补全带签名的 `textures`；若 `SkinPort` 不可用，还会继续尝试服务端 `PlayerProfileCache` / `GameProfileRepository` 回退解析
+- 当前兼容层的成功标准已从“存在 `textures` 属性”提升为“存在带签名的 `textures` 属性”，因为 1.7.10 客户端远程玩家皮肤加载会拒绝 unsigned textures
+- `FakePlayerProfiles.resolveSkinProfile(...)`：为恢复补皮路径暴露可复用的拷贝型解析入口，成功时返回复制后的带纹理 profile，避免共享可变属性表
+- `FakePlayerSkinRestoreScheduler`：接在 `FakePlayerRestoreScheduler` 之后；对每个恢复出的 bot 后台解析皮肤，成功后回主线程调用 `FakePlayer.rebuildRestoredWithProfile(...)` 安全替换实体
+- 当前皮肤支持范围已覆盖“新生成 fake player”与“服务端重启恢复后的异步补皮重建”；仍不会把 `textures` 持久化进 registry，也不会做无限重试队列
 
 ### ServerUtilities 兼容
 - `ServerUtilitiesCompat.isFakePlayer(EntityPlayerMP)`：将 GTstaff 的 `FakePlayer` 暴露为可供 ServerUtilities 判断的兼容入口
@@ -132,6 +136,7 @@
 - `src/test/java/com/andgatech/gtstaff/fakeplayer/FakeNetworkManagerTest.java`
 - `src/test/java/com/andgatech/gtstaff/fakeplayer/FakePlayerProfilesTest.java`
 - `src/test/java/com/andgatech/gtstaff/fakeplayer/FakePlayerRegistryTest.java`
+- `src/test/java/com/andgatech/gtstaff/fakeplayer/FakePlayerSkinRestoreSchedulerTest.java`
 - `src/test/java/com/andgatech/gtstaff/fakeplayer/MachineMonitorServiceTest.java`
 - `src/test/java/com/andgatech/gtstaff/fakeplayer/PlayerActionPackTest.java`
 - `src/test/java/com/andgatech/gtstaff/integration/SkinPortCompatTest.java`
@@ -146,6 +151,10 @@
 - `src/test/java/com/andgatech/gtstaff/ui/FakePlayerInventoryContainerTest.java`
 - 已通过 `./gradlew.bat --offline test` 作为当前分支的最终自动化 smoke test
 - 已通过 `./gradlew.bat --offline assemble` 产出客户端测试用 jar，产物位于 `build/libs/`
+- 已通过 `./gradlew.bat --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true assemble` 重新打包当前工作区产物
+- 当前最新 jar：`build/libs/gtstaff-v1.0.1.jar`
+- 当前最新 dev jar：`build/libs/gtstaff-v1.0.1-dev.jar`
+- 当前最新 sources jar：`build/libs/gtstaff-v1.0.1-sources.jar`
 - 最新重新打包 jar：`build/libs/gtstaff-b166ed7-master+b166ed77c1-dirty.jar`（含监控增强、颜色分配、中文翻译、提醒频率按钮）
 - 最新客户端测试主 jar：`build/libs/gtstaff-v0.1.1-master+1f334d4b20-dirty.jar`（含敌对生物驱逐器、其他功能页签）
 
@@ -158,11 +167,12 @@
 - `IFakePlayerHolder` 负责把 `PlayerActionPack` 暴露给 `FakePlayer`
 - `PlayerActionPack` 直接适配 1.7.10 `ItemInWorldManager`，没有照搬现代 Carpet API
 - `FakePlayerRegistry.load(...)` 只负责读取持久化快照；实体恢复由 `restorePersisted(...)` 在服务端启动阶段统一执行
-- 自动恢复采用“持久化快照 -> `FakePlayerRestoreScheduler` 延后调度 -> `FakePlayer.restorePersisted(...)` -> 统一注册”的流程，避免在纯 IO 阶段直接创建 Minecraft 实体
+- 自动恢复采用“持久化快照 -> `FakePlayerRestoreScheduler` 延后调度 -> `FakePlayer.restorePersisted(...)` -> `FakePlayerSkinRestoreScheduler` 异步补皮 -> 主线程 `FakePlayer.rebuildRestoredWithProfile(...)` 安全替换”的流程，避免在纯 IO 阶段直接创建 Minecraft 实体，同时不阻塞开服
 - `CommonProxy.serverStarted(...)` 当前只负责读取 registry 并登记待恢复状态，不再直接在 FML `serverStarted` 事件里构建 fake player
 - `FakePlayerRestoreScheduler` 的恢复策略：
 - 专用服：服务器启动后的下一次 `ServerTickEvent` 即可恢复持久化 bot
 - 集成服：必须等到至少一名真实 `EntityPlayerMP` 在线后才执行自动恢复，避免单人世界启动链中过早触发 fake player 登录事件
+- `FakePlayerSkinRestoreScheduler` 使用后台单线程 + 主线程回切的两段式调度；停服时通过 generation 递增让旧异步结果失效，避免跨停服替换过期 bot
 - `MachineMonitorService` 参考了 `GT5-Unofficial-master` 无人机监控链路，状态来源为 `getLastShutDownReason()`、`getIdealStatus()/getRepairStatus()`、`getCheckRecipeResult()`
 - 不能依赖 `ShutDownReason.getID()` 或 `CheckRecipeResult.getID()` 判断具体语义；当前对掉电使用 `POWER_LOSS` 身份比较加反射兜底，对输出满使用常量比较加 `equals(...)`
 - Spawn、Look、Inventory 三个子窗口都通过 `InteractionSyncHandler` + `GTNHLib` 的 `ServerThreadUtil` 把真实逻辑收口到服务端主线程

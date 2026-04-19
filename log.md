@@ -1,5 +1,56 @@
 # 开发日志
 
+## 2026-04-19：发布 v1.0.1
+
+### 已完成
+- 将 `gradle.properties` 中的 `modVersion` 从 `v1.0.0` 更新为 `v1.0.1`
+- 重新运行 release 验证测试：`SkinPortCompatTest`、`FakePlayerProfilesTest`、`FakePlayerSkinRestoreSchedulerTest`、`FakePlayerRestoreSchedulerTest`
+- 重新运行 `./gradlew.bat --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true assemble`
+- 生成新产物 `build/libs/gtstaff-v1.0.1.jar`、`build/libs/gtstaff-v1.0.1-dev.jar`、`build/libs/gtstaff-v1.0.1-sources.jar`
+
+### 遇到的问题
+- **版本源不只影响源码显示**：GTNH 构建会同时把 `modVersion` 注入生成的 `Tags.VERSION` 与最终 jar 文件名，因此发布前必须先统一修改版本源，再重新打包验证
+
+### 做出的决定
+- 继续以 `gradle.properties` 的 `modVersion` 作为单一版本来源，避免手工改多个文件造成源码版本与 jar 文件名不一致
+
+---
+
+## 2026-04-19：重新打包当前 GTstaff jar
+
+### 已完成
+- 运行 `./gradlew.bat --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true assemble`
+- 成功生成 `build/libs/gtstaff-v1.0.0.jar`
+- 同时生成 `build/libs/gtstaff-v1.0.0-dev.jar` 与 `build/libs/gtstaff-v1.0.0-sources.jar`
+
+### 遇到的问题
+- **Gradle wrapper 仍需要访问用户级缓存目录**：本次仍通过允许访问本地 Gradle cache 的提权命令完成打包
+
+### 做出的决定
+- 继续沿用 `assemble` 作为当前分支的标准打包入口，不额外引入新的发布脚本
+
+---
+
+## 2026-04-19：重启恢复假人后异步补皮并安全重建
+
+### 已完成
+- `FakePlayerRegistry.restorePersisted(...)` 现在会返回本轮恢复出的 bot 列表，并保留持久化顺序，供恢复后续流程继续调度
+- 新增 `FakePlayerSkinRestoreScheduler`，对每个恢复出的 bot 后台调用 `FakePlayerProfiles.resolveSkinProfile(name)`；成功后切回主线程执行 `FakePlayer.rebuildRestoredWithProfile(...)`
+- `FakePlayer` 新增恢复态快照与 `rebuildRestoredWithProfile(...)`；重建后会保留 owner、监控开关、监控范围、提醒频率、敌对生物驱逐、跟随目标/距离、维度、坐标、朝向、飞行状态与游戏模式
+- `FakePlayerRestoreScheduler` 现在会把恢复出的 bot 批量交给 `FakePlayerSkinRestoreScheduler`；`CommonProxy.serverStopping(...)` 会取消未完成的补皮任务，避免跨停服残留
+- 新增 `FakePlayerSkinRestoreSchedulerTest`，并扩展 `FakePlayerRegistryTest`、`FakePlayerRestoreSchedulerTest`、`FakePlayerProfilesTest`
+- 通过 `./gradlew.bat --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true test --tests com.andgatech.gtstaff.fakeplayer.FakePlayerRegistryTest --tests com.andgatech.gtstaff.fakeplayer.FakePlayerRestoreSchedulerTest --tests com.andgatech.gtstaff.fakeplayer.FakePlayerProfilesTest --tests com.andgatech.gtstaff.fakeplayer.FakePlayerSkinRestoreSchedulerTest`
+
+### 遇到的问题
+- **恢复链路之前只会构造离线 `GameProfile`**：重启恢复出的 bot 无法复用已有的 `SkinPort` 解析逻辑，需要把“先恢复实体”和“后补皮重建”拆成两段
+- **异步补皮结果可能回到过期实例**：后台解析完成时，同名 bot 可能已经被手动 kill、purge 或重新替换，必须在主线程重建前再次确认 registry 仍指向原实例
+
+### 做出的决定
+- 不在原实体上热改 `GameProfile`，而是在补皮成功后重建实体，换取客户端皮肤可见性的确定性
+- 补皮解析固定放在后台单线程执行，实体替换固定回主线程；停服时用 generation 失效旧任务结果，而不是尝试强杀正在运行的网络解析
+
+---
+
 ## 2026-04-19：补齐缺失的假人命令入口
 
 ### 已完成
@@ -485,3 +536,22 @@
 - 保留 `FakePlayerManagerService.submitSpawn(SpawnDraft)` 作为原有服务接口，同时增加字符串入口，尽量把改动收敛在 UI 提交层
 
 ---
+## 2026-04-19：修复假人皮肤仍回退默认 Steve/Alex
+
+### 已完成
+- 调整 `SkinPortCompat`：不再直接使用 `SkinPort` 的 `MojangService.fillProfile(...)` 结果生成假人皮肤，而是仅将其作为“按名字解析在线 `GameProfile`/UUID”的可选桥接
+- 新增 secure fill 路径：在拿到在线 UUID 后统一回到服务端 `MinecraftSessionService.fillProfileProperties(profile, true)` 补全带签名的 `textures`，避免客户端 `getTextures(profile, true)` 因无签名而拒绝加载
+- 为未安装 `SkinPort` 的情况补上服务端 profile cache/repository 回退；在线模式下即使没有 `SkinPort` 也能尝试解析正版 UUID，再决定是否补全皮肤
+- 更新 `SkinPortCompatTest`，覆盖“secure filler 生效”“unsigned textures 被拒绝”“bridge 不可用时 fallback resolver 生效”“反射 bridge 只解析 base profile”四条关键回归
+- 通过 `./gradlew.bat --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true test --tests com.andgatech.gtstaff.integration.SkinPortCompatTest`
+- 通过 `./gradlew.bat --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true test --tests com.andgatech.gtstaff.fakeplayer.FakePlayerProfilesTest --tests com.andgatech.gtstaff.fakeplayer.FakePlayerSkinRestoreSchedulerTest --tests com.andgatech.gtstaff.fakeplayer.FakePlayerRestoreSchedulerTest`
+- 通过 `./gradlew.bat --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true compileJava`
+- 通过 `./gradlew.bat --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true assemble`
+
+### 遇到的问题
+- **`SkinPort` 服务端补出来的是 unsigned textures**：阅读 `authlib` 与 `SkinPort` 源码后确认，`MojangService.fillProfile(...)` 内部走的是 `fillProfileProperties(profile, false)`；而 1.7.10 客户端远程玩家首次取皮肤使用 `getTextures(profile, true)`，会直接拒绝无签名纹理
+- **客户端被拒绝后只会回到默认皮**：`SkinPort` 客户端当前注册的只是默认 Steve/Alex provider，没有继续替 GTstaff 假人下载真实远程皮肤，所以服务端必须提供可被 vanilla 安全校验接受的 signed `textures`
+
+### 做出的决定
+- 保留 `SkinPort` 作为“可选在线 UUID 解析器”，但不再信任它返回的 filled profile 可直接用于客户端皮肤加载
+- 皮肤链路的成功标准从“有 `textures` 属性”提升为“有带签名的 `textures` 属性”，避免再次把客户端一定会拒绝的 unsigned profile 送进生成/恢复流程

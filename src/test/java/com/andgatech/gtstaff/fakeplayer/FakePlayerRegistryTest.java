@@ -133,6 +133,25 @@ class FakePlayerRegistryTest {
         assertEquals(owner, restoredPlayer.getOwnerUUID());
     }
 
+    @Test
+    void restorePersistedReturnsRestoredBotsInRegistrationOrder(@TempDir File tempDir) {
+        FakePlayerRegistry.register(fakePlayer("Alpha"), UUID.randomUUID());
+        FakePlayerRegistry.register(fakePlayer("Beta"), UUID.randomUUID());
+
+        File file = new File(tempDir, "gtstaff_registry.dat");
+        FakePlayerRegistry.save(file);
+
+        FakePlayerRegistry.clear();
+        FakePlayerRegistry.load(file);
+
+        List<FakePlayer> restored = FakePlayerRegistry
+            .restorePersisted(data -> fakePlayer(data.getName(), data.getProfileId()));
+
+        assertEquals(2, restored.size());
+        assertEquals("Alpha", restored.get(0).getCommandSenderName());
+        assertEquals("Beta", restored.get(1).getCommandSenderName());
+    }
+
     private static StubFakePlayer fakePlayer(String name) {
         return fakePlayer(name, UUID.nameUUIDFromBytes(name.getBytes()));
     }

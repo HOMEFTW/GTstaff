@@ -4,14 +4,34 @@ import java.lang.reflect.Method;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 
+import net.minecraft.server.MinecraftServer;
+
 import com.google.common.util.concurrent.ListenableFuture;
 import com.mojang.authlib.GameProfile;
+import com.mojang.authlib.properties.Property;
 
 public final class SkinPortCompat {
 
     private static final String MOJANG_SERVICE_CLASS = "lain.mods.skins.impl.MojangService";
 
+    @FunctionalInterface
+    interface SecureFiller {
+
+        GameProfile fill(GameProfile profile);
+    }
+
+    @FunctionalInterface
+    interface FallbackResolver {
+
+        GameProfile resolveProfile(String playerName);
+    }
+
+    private static final SecureFiller DEFAULT_SECURE_FILLER = SkinPortCompat::fillSecureProfile;
+    private static final FallbackResolver DEFAULT_FALLBACK_RESOLVER = SkinPortCompat::resolveProfileFromServer;
+
     private static volatile Bridge bridge = createBridge(MOJANG_SERVICE_CLASS, SkinPortCompat.class.getClassLoader());
+    private static volatile SecureFiller secureFiller = DEFAULT_SECURE_FILLER;
+    private static volatile FallbackResolver fallbackResolver = DEFAULT_FALLBACK_RESOLVER;
 
     private SkinPortCompat() {}
 
@@ -30,11 +50,16 @@ public final class SkinPortCompat {
         }
 
         try {
-            GameProfile profile = bridge.resolveProfile(playerName);
-            if (!hasTextures(profile)) {
+            GameProfile resolvedProfile = resolveBaseProfile(playerName);
+            if (resolvedProfile == null || resolvedProfile.getId() == null) {
                 return Optional.empty();
             }
-            return Optional.of(profile);
+
+            GameProfile secureProfile = secureFiller.fill(copyWithoutProperties(resolvedProfile));
+            if (!hasSignedTextures(secureProfile)) {
+                return Optional.empty();
+            }
+            return Optional.of(secureProfile);
         } catch (Exception e) {
             return Optional.empty();
         }
@@ -44,8 +69,7 @@ public final class SkinPortCompat {
         try {
             Class<?> serviceClass = Class.forName(className, true, classLoader);
             Method getProfileMethod = serviceClass.getMethod("getProfile", String.class);
-            Method fillProfileMethod = serviceClass.getMethod("fillProfile", GameProfile.class);
-            return playerName -> resolveFilledProfile(getProfileMethod, fillProfileMethod, playerName);
+            return playerName -> resolveProfile(getProfileMethod, playerName);
         } catch (ReflectiveOperationException e) {
             return unavailable();
         }
@@ -56,19 +80,62 @@ public final class SkinPortCompat {
             : bridge;
     }
 
-    private static boolean hasTextures(GameProfile profile) {
-        return profile != null && profile.getProperties() != null && !profile.getProperties().get("textures").isEmpty();
+    static void setSecureFillerForTests(SecureFiller filler) {
+        secureFiller = filler == null ? DEFAULT_SECURE_FILLER : filler;
+    }
+
+    static void setFallbackResolverForTests(FallbackResolver resolver) {
+        fallbackResolver = resolver == null ? DEFAULT_FALLBACK_RESOLVER : resolver;
+    }
+
+    private static GameProfile resolveBaseProfile(String playerName) {
+        GameProfile profile = bridge.resolveProfile(playerName);
+        if (profile != null && profile.getId() != null) {
+            return profile;
+        }
+        return fallbackResolver.resolveProfile(playerName);
+    }
+
+    private static boolean hasSignedTextures(GameProfile profile) {
+        if (profile == null || profile.getProperties() == null || profile.getProperties().get("textures").isEmpty()) {
+            return false;
+        }
+        for (Property property : profile.getProperties().get("textures")) {
+            if (property != null && property.hasSignature() && property.getValue() != null
+                && !property.getValue().isEmpty()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static GameProfile copyWithoutProperties(GameProfile profile) {
+        if (profile == null) {
+            return null;
+        }
+        return new GameProfile(profile.getId(), profile.getName());
+    }
+
+    private static GameProfile fillSecureProfile(GameProfile profile) {
+        MinecraftServer server = MinecraftServer.getServer();
+        if (server == null || profile == null || profile.getId() == null) {
+            return null;
+        }
+        return server.func_147130_as().fillProfileProperties(copyWithoutProperties(profile), true);
+    }
+
+    private static GameProfile resolveProfileFromServer(String playerName) {
+        MinecraftServer server = MinecraftServer.getServer();
+        if (server == null || server.func_152358_ax() == null) {
+            return null;
+        }
+        return server.func_152358_ax().func_152655_a(playerName);
     }
 
     @SuppressWarnings("unchecked")
-    private static GameProfile resolveFilledProfile(Method getProfileMethod, Method fillProfileMethod, String playerName) {
+    private static GameProfile resolveProfile(Method getProfileMethod, String playerName) {
         try {
-            GameProfile resolvedProfile = awaitProfile(getProfileMethod.invoke(null, playerName));
-            if (resolvedProfile == null) {
-                return null;
-            }
-
-            return awaitProfile(fillProfileMethod.invoke(null, resolvedProfile));
+            return awaitProfile(getProfileMethod.invoke(null, playerName));
         } catch (Exception e) {
             return null;
         }

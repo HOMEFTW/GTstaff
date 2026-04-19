@@ -6,6 +6,10 @@
 
 
 ## 已完成
+- [x] 发布 v1.0.1：更新项目版本号、重新打包新 jar，并将代码与 release 资产推送到 GitHub
+- [x] 修复假人仍回退默认皮的问题：`SkinPortCompat` 现在先解析在线 UUID，再走服务端 secure `fillProfileProperties(..., true)` 生成带签名 `textures`；同时补上无 `SkinPort` 时的服务端 profile cache/repository 回退与回归测试
+- [x] 使用 `./gradlew.bat --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true assemble` 打包当前 GTstaff jar
+- [x] 服务端重启恢复 fake player 后异步按 bot 名联网补皮；成功时安全重建为带皮肤的新实例，失败、无纹理或任务过期时保留原 bot
 - [x] 阅读 `SkinPort-master` 源码并加入轻量可选兼容：新生成的 fake player 会在安装 `SkinPort` 时按 bot 名尝试解析正版 `GameProfile` 皮肤资料；未安装、解析失败或无纹理时静默回退到现有离线 profile，且不改持久化恢复路径
 - [x] 补齐缺失的假人命令入口：新增 `repel`、`inventory`，并为 `monitor` 增加 `scan` 与 `interval`；同时把 `stopattack`、`stopuse` 写入 `/player` 用法字符串
 - [x] 扩展“完全清除”对 `playerdata` 的删除范围：额外删除 `<假人名>.tf` 与 `<假人名>.tfback`
