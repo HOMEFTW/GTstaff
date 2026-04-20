@@ -16,6 +16,22 @@
 
 ---
 
+## 2026-04-20：补充 GTstaff 假人 Baubles 统一背包实现计划
+
+### 已完成
+- 基于已确认的设计文档，新增实现计划 `docs/superpowers/plans/2026-04-20-gtstaff-fake-player-baubles-inventory.md`
+- 计划中明确拆分了依赖接入、动态饰品区布局计算、统一容器扩展、GUI handler 接线、GUI 滚动与最终验证五个任务
+- 结合 `InventoryBaubles`、`SlotBauble` 与 `PlayerHandler` 实现细节，收紧计划约束：客户端与服务端统一直接解析假人的 `InventoryBaubles`
+
+### 遇到的问题
+- **`SlotBauble` 依赖 `InventoryBaubles` 具体类型**：它会直接把传入库存强转为 `InventoryBaubles`，不能在计划里再假设“任意 `IInventory` 占位库存”可用
+
+### 做出的决定
+- 在实现计划里显式加入 `InventoryBaubles` 解析和容器 helper API，避免执行阶段再临时改接口
+- 本轮只完成计划与日志更新，不进入代码实现
+
+---
+
 ## 2026-04-19：重新打包当前 GTstaff jar
 
 ### 已完成
