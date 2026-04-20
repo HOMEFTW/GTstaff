@@ -115,6 +115,7 @@
 - `FakePlayerInventoryContainer`：负责 fake player 与当前玩家背包的槽位布局、Shift 点击互传、点击 hotbar 槽同步 `currentItem`
 - `FakePlayerInventoryGuiHandler`：通过 Forge `IGuiHandler` 打通 `MUI2 -> openGui -> Container/GuiContainer`
 - `FakePlayerInventoryGui`：原版 chest-style `GuiContainer`，会高亮 fake player 当前主手 hotbar 槽位
+- 当前工作树中的统一背包实现已接入 `Baubles Expanded`：右侧饰品区跟随 `BaubleExpandedSlots` 当前配置动态生成，支持滚轮/滚动条浏览，并复用 `InventoryBaubles` 与 `SlotBauble`
 
 ### Mixin
 - `EntityPlayerMPMixin`：为 `FakePlayer` 注入并 tick `PlayerActionPack`
@@ -161,6 +162,7 @@
 ## 依赖
 - JUnit Jupiter 5.10.2（测试）
 - GTNHLib：当前已实际参考并接入 `ServerThreadUtil`；`AboveHotbarHUD` / `PacketMessageAboveHotbar` 与 `ConfigSyncHandler` 记录为后续可选参考
+- `Baubles Expanded`：当前统一背包实现已作为硬依赖接入，统一背包右侧饰品区直接复用其 `InventoryBaubles`、`SlotBauble` 与动态槽位配置
 - `ServerUtilities`：当前通过可选 mixin 接入其 `ServerUtils.isFake(...)` 判断链，不要求 GTstaff 在无该模组环境下强依赖加载
 
 ## 架构备注

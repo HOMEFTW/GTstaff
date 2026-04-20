@@ -5,6 +5,7 @@
 
 ## 当前计划
 - [ ] 为 GTstaff 假人背包管理界面接入 Baubles Expanded 饰品栏支持：在现有统一背包容器中合并展示并编辑假人的饰品槽，槽位数量、类型与滚动布局跟随 Baubles Expanded 当前配置
+- [ ] 为 GTstaff 假人统一背包接入 Backhand 副手支持：在盔甲槽旁边增加真实副手槽，并完全跟随 Backhand 当前黑名单与 Shift 点击规则
 
 ## 已完成
 - [x] 发布 v1.0.1：更新项目版本号、重新打包新 jar，并将代码与 release 资产推送到 GitHub

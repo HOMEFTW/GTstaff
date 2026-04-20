@@ -587,3 +587,19 @@
 - 本轮先停在设计与规格确认，不提前进入实现阶段
 
 ---
+## 2026-04-20：完成 Backhand 副手槽设计
+
+### 已完成
+- 阅读 `GTNH LIB/Backhand-master` 中的 `BackhandUtils`、`BackhandSlot`、`IOffhandInventory` 与 `MixinGuiInventory`
+- 确认 Backhand 的真实副手库存入口应通过 `BackhandUtils.getOffhandItem/setPlayerOffhandItem/getOffhandSlot` 访问，而不是把副手当作普通 `mainInventory` 槽位硬编码
+- 新增设计文档 `docs/superpowers/specs/2026-04-20-gtstaff-fake-player-backhand-offhand-design.md`
+
+### 遇到的问题
+- **副手不是普通背包尾部槽位**：Backhand 通过 `IOffhandInventory` mixin 扩展 `InventoryPlayer`，如果只在 GTstaff 容器里临时挂一个代理槽，后续客户端同步和 Shift 点击优先级会变得很脆弱
+
+### 做出的决定
+- 采用“正式扩展 `FakePlayerInventoryView` 槽位模型”的方案，把副手槽并入统一背包固定索引
+- 副手物品合法性直接复用 `BackhandSlot`，不在 GTstaff 内部重新实现黑名单逻辑
+- Shift 点击优先级固定为“护甲 > 副手 > 饰品 > 普通背包”
+
+---
