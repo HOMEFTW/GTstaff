@@ -7,15 +7,26 @@ import java.util.Map;
 
 import net.minecraft.block.Block;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityLivingBase;
+import net.minecraft.entity.SharedMonsterAttributes;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.AxisAlignedBB;
 import net.minecraft.util.ChunkCoordinates;
+import net.minecraft.util.DamageSource;
 import net.minecraft.util.MathHelper;
 import net.minecraft.util.MovingObjectPosition;
 import net.minecraft.util.Vec3;
 
+import com.andgatech.gtstaff.integration.FakePlayerClientUseCompat;
+import com.andgatech.gtstaff.integration.FakePlayerMovementCompat;
+
 public class PlayerActionPack {
+
+    public static enum MovementTrigger {
+        JUMP,
+        SNEAK
+    }
 
     private final EntityPlayerMP player;
     private final Map<ActionType, Action> actions = new EnumMap<>(ActionType.class);
@@ -120,9 +131,13 @@ public class PlayerActionPack {
     }
 
     public void setSneaking(boolean value) {
+        boolean changedToSneaking = value && !sneaking;
         sneaking = value;
         if (value) {
             sprinting = false;
+        }
+        if (changedToSneaking) {
+            performMovementCompatBridge(MovementTrigger.SNEAK);
         }
     }
 
@@ -147,10 +162,13 @@ public class PlayerActionPack {
 
         Entity closestEntity = null;
         Vec3 closestEntityHit = null;
-        double closestEntityDist = Double.MAX_VALUE;
+        double closestEntityDist = blockDist;
 
         List<Entity> entities = player.worldObj
-            .getEntitiesWithinAABBExcludingEntity(player, player.boundingBox.expand(reach, reach, reach));
+            .getEntitiesWithinAABBExcludingEntity(
+                player,
+                player.boundingBox.addCoord(lookVec.xCoord * reach, lookVec.yCoord * reach, lookVec.zCoord * reach)
+                    .expand(1.0D, 1.0D, 1.0D));
         for (Entity entity : entities) {
             if (!entity.canBeCollidedWith()) {
                 continue;
@@ -158,18 +176,34 @@ public class PlayerActionPack {
             float border = entity.getCollisionBorderSize();
             AxisAlignedBB expandedBB = entity.boundingBox.expand(border, border, border);
             MovingObjectPosition intercept = expandedBB.calculateIntercept(eyePos, endPos);
-            if (intercept == null) {
+
+            if (expandedBB.isVecInside(eyePos)) {
+                if (0.0D <= closestEntityDist) {
+                    closestEntityDist = 0.0D;
+                    closestEntityHit = intercept == null ? eyePos : intercept.hitVec;
+                    closestEntity = entity;
+                }
                 continue;
             }
-            double dist = eyePos.distanceTo(intercept.hitVec);
-            if (dist < closestEntityDist) {
-                closestEntityDist = dist;
-                closestEntityHit = intercept.hitVec;
-                closestEntity = entity;
+
+            if (intercept != null) {
+                double dist = eyePos.distanceTo(intercept.hitVec);
+                if (dist < closestEntityDist || closestEntityDist == 0.0D) {
+                    if (entity == player.ridingEntity && !entity.canRiderInteract()) {
+                        if (closestEntityDist == 0.0D) {
+                            closestEntityHit = intercept.hitVec;
+                            closestEntity = entity;
+                        }
+                    } else {
+                        closestEntityDist = dist;
+                        closestEntityHit = intercept.hitVec;
+                        closestEntity = entity;
+                    }
+                }
             }
         }
 
-        if (closestEntity != null && closestEntityDist < blockDist) {
+        if (closestEntity != null && (closestEntityDist < blockDist || blockHit == null)) {
             return new MovingObjectPosition(closestEntity, closestEntityHit);
         }
 
@@ -191,6 +225,8 @@ public class PlayerActionPack {
         }
 
         ItemStack held = player.getCurrentEquippedItem();
+        boolean blockUsed = false;
+        boolean itemUsed = false;
 
         if (target != null && target.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK) {
             float hitX = 0.5F;
@@ -204,44 +240,119 @@ public class PlayerActionPack {
                 hitZ = (float) (hitVec.zCoord - target.blockZ);
             }
 
-            if (player.theItemInWorldManager.activateBlockOrUseItem(
-                player,
-                player.worldObj,
-                held,
-                target.blockX,
-                target.blockY,
-                target.blockZ,
-                target.sideHit,
-                hitX,
-                hitY,
-                hitZ)) {
-                itemUseCooldown = 3;
-                return true;
-            }
+            blockUsed = performBlockActivationUse(target, held, hitX, hitY, hitZ);
         }
 
-        if (held != null && player.theItemInWorldManager.tryUseItem(player, player.worldObj, held)) {
+        if (!blockUsed && held != null) {
+            itemUsed = performDirectItemUse(held);
+        }
+
+        boolean bridgeUsed = performClientUseBridge(target, held, blockUsed, itemUsed);
+        if (blockUsed || itemUsed || bridgeUsed) {
             itemUseCooldown = 3;
             return true;
         }
 
-        return false;
+        performSwingAnimation();
+        itemUseCooldown = 3;
+        return true;
+    }
+
+    protected boolean performBlockActivationUse(MovingObjectPosition target, ItemStack held, float hitX, float hitY,
+        float hitZ) {
+        return player.theItemInWorldManager.activateBlockOrUseItem(
+            player,
+            player.worldObj,
+            held,
+            target.blockX,
+            target.blockY,
+            target.blockZ,
+            target.sideHit,
+            hitX,
+            hitY,
+            hitZ);
+    }
+
+    protected boolean performDirectItemUse(ItemStack held) {
+        return player.theItemInWorldManager.tryUseItem(player, player.worldObj, held);
+    }
+
+    protected boolean performClientUseBridge(MovingObjectPosition target, ItemStack held, boolean blockUsed,
+        boolean itemUsed) {
+        return FakePlayerClientUseCompat.tryUse(player, held, target, blockUsed, itemUsed);
+    }
+
+    protected boolean performMovementCompatBridge(MovementTrigger trigger) {
+        return FakePlayerMovementCompat.tryTrigger(player, trigger);
+    }
+
+    protected void performSwingAnimation() {
+        player.swingItem();
+        if (player instanceof FakePlayer fake) fake.broadcastSwingAnimation();
+    }
+
+    protected void performEntityAttack(Entity targetEntity) {
+        EntityAttackState attackState = EntityAttackState.capture(targetEntity);
+        player.attackTargetEntityWithCurrentItem(targetEntity);
+        if (!attackState.hasObservableAttackEffect(targetEntity)) {
+            performEntityAttackFallback(targetEntity);
+        }
+    }
+
+    protected boolean performEntityAttackFallback(Entity targetEntity) {
+        float fallbackDamage = resolveFallbackAttackDamage();
+        if (fallbackDamage <= 0.0F) {
+            return false;
+        }
+        DamageSource damageSource = DamageSource.causePlayerDamage(player);
+        if (targetEntity instanceof EntityLivingBase livingTarget) {
+            return forceLivingEntityDamage(livingTarget, damageSource, fallbackDamage, livingTarget.getHealth());
+        }
+        return targetEntity.attackEntityFrom(damageSource, fallbackDamage);
+    }
+
+    protected float resolveFallbackAttackDamage() {
+        if (player == null || player.getEntityAttribute(SharedMonsterAttributes.attackDamage) == null) {
+            return 1.0F;
+        }
+        return Math.max(1.0F, (float) player.getEntityAttribute(SharedMonsterAttributes.attackDamage).getAttributeValue());
+    }
+
+    protected boolean forceLivingEntityDamage(EntityLivingBase targetEntity, DamageSource damageSource, float damage,
+        float previousHealth) {
+        if (targetEntity == null || damage <= 0.0F || previousHealth <= 0.0F) {
+            return false;
+        }
+
+        targetEntity.prevHealth = previousHealth;
+        targetEntity.hurtResistantTime = targetEntity.maxHurtResistantTime;
+        targetEntity.maxHurtTime = 10;
+        targetEntity.hurtTime = targetEntity.maxHurtTime;
+        targetEntity.velocityChanged = true;
+
+        float updatedHealth = Math.max(0.0F, previousHealth - damage);
+        targetEntity.setHealth(updatedHealth);
+        if (updatedHealth <= 0.0F && !targetEntity.isDead) {
+            targetEntity.onDeath(damageSource);
+        }
+        return updatedHealth < previousHealth;
     }
 
     protected boolean performAttack(MovingObjectPosition target) {
         if (target == null) {
-            return false;
+            performSwingAnimation();
+            return true;
         }
 
         if (target.typeOfHit == MovingObjectPosition.MovingObjectType.ENTITY) {
             Entity targetEntity = target.entityHit;
             if (targetEntity == null) {
-                return false;
+                performSwingAnimation();
+                return true;
             }
 
-            player.attackTargetEntityWithCurrentItem(targetEntity);
-            player.swingItem();
-            if (player instanceof FakePlayer fake) fake.broadcastSwingAnimation();
+            performEntityAttack(targetEntity);
+            performSwingAnimation();
             return true;
         }
 
@@ -249,7 +360,8 @@ public class PlayerActionPack {
             return attackBlock(target);
         }
 
-        return false;
+        performSwingAnimation();
+        return true;
     }
 
     private boolean executeAction(ActionType type) {
@@ -259,6 +371,9 @@ public class PlayerActionPack {
             case ATTACK:
                 return performAttack(getTarget());
             case JUMP:
+                if (performMovementCompatBridge(MovementTrigger.JUMP)) {
+                    return true;
+                }
                 if (player.onGround) {
                     player.jump();
                 } else {
@@ -298,8 +413,7 @@ public class PlayerActionPack {
 
         if (isCreativeMode()) {
             player.theItemInWorldManager.onBlockClicked(x, y, z, target.sideHit);
-            player.swingItem();
-            if (player instanceof FakePlayer fake) fake.broadcastSwingAnimation();
+            performSwingAnimation();
             blockHitDelay = 5;
             clearBlockBreakingState();
             return true;
@@ -317,8 +431,7 @@ public class PlayerActionPack {
             curBlockDamageMP += hardness;
         }
 
-        player.swingItem();
-        if (player instanceof FakePlayer fake) fake.broadcastSwingAnimation();
+        performSwingAnimation();
 
         if (curBlockDamageMP >= 1.0F) {
             boolean harvested = player.theItemInWorldManager.tryHarvestBlock(x, y, z);
@@ -371,5 +484,66 @@ public class PlayerActionPack {
 
     private boolean isCreativeMode() {
         return player.theItemInWorldManager != null && player.theItemInWorldManager.isCreative();
+    }
+
+    private static final class EntityAttackState {
+
+        private final boolean dead;
+        private final boolean velocityChanged;
+        private final boolean burning;
+        private final float health;
+        private final int hurtTime;
+        private final int hurtResistantTime;
+        private final int deathTime;
+        private final boolean living;
+
+        private EntityAttackState(boolean dead, boolean velocityChanged, boolean burning, float health, int hurtTime,
+            int hurtResistantTime, int deathTime, boolean living) {
+            this.dead = dead;
+            this.velocityChanged = velocityChanged;
+            this.burning = burning;
+            this.health = health;
+            this.hurtTime = hurtTime;
+            this.hurtResistantTime = hurtResistantTime;
+            this.deathTime = deathTime;
+            this.living = living;
+        }
+
+        private static EntityAttackState capture(Entity targetEntity) {
+            if (targetEntity instanceof EntityLivingBase livingTarget) {
+                return new EntityAttackState(
+                    livingTarget.isDead,
+                    livingTarget.velocityChanged,
+                    livingTarget.isBurning(),
+                    livingTarget.getHealth(),
+                    livingTarget.hurtTime,
+                    livingTarget.hurtResistantTime,
+                    livingTarget.deathTime,
+                    true);
+            }
+            return new EntityAttackState(
+                targetEntity != null && targetEntity.isDead,
+                targetEntity != null && targetEntity.velocityChanged,
+                targetEntity != null && targetEntity.isBurning(),
+                0.0F,
+                0,
+                0,
+                0,
+                false);
+        }
+
+        private boolean hasObservableAttackEffect(Entity targetEntity) {
+            if (targetEntity == null) {
+                return false;
+            }
+            if (!living) {
+                return targetEntity.isDead != dead || targetEntity.velocityChanged != velocityChanged
+                    || targetEntity.isBurning() != burning;
+            }
+            if (!(targetEntity instanceof EntityLivingBase livingTarget)) {
+                return true;
+            }
+            return livingTarget.isDead != dead || livingTarget.getHealth() < health || livingTarget.deathTime > deathTime;
+        }
     }
 }

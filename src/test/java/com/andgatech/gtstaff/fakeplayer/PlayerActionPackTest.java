@@ -12,8 +12,16 @@ import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.entity.player.InventoryPlayer;
 import net.minecraft.inventory.Container;
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemStack;
 import net.minecraft.server.management.ItemInWorldManager;
+import net.minecraft.util.AxisAlignedBB;
+import net.minecraft.util.DamageSource;
 import net.minecraft.util.MovingObjectPosition;
+import net.minecraft.util.Vec3;
+import net.minecraft.world.World;
+import net.minecraft.world.WorldServer;
+import net.minecraft.world.WorldSettings;
 
 import org.junit.jupiter.api.Test;
 
@@ -104,12 +112,171 @@ class PlayerActionPackTest {
         assertFalse(player.jumpingState);
     }
 
+    @Test
+    void clientUseBridgeCanRunAfterDirectItemUseSucceeds() {
+        StubPlayer player = stubPlayer();
+        player.inventory.mainInventory[0] = new ItemStack(new Item());
+        player.inventory.currentItem = 0;
+        BridgeAwarePack pack = new BridgeAwarePack(player);
+        pack.directItemUseResult = true;
+        pack.bridgeUseResult = true;
+
+        assertTrue(pack.performUse(null));
+        assertEquals(1, pack.directItemUseCalls);
+        assertEquals(1, pack.bridgeUseCalls);
+        assertFalse(pack.bridgeSawBlockUsed);
+        assertTrue(pack.bridgeSawItemUsed);
+    }
+
+    @Test
+    void clientUseBridgeSeesBlockInteractionState() {
+        StubPlayer player = stubPlayer();
+        player.inventory.mainInventory[0] = new ItemStack(new Item());
+        player.inventory.currentItem = 0;
+        BridgeAwarePack pack = new BridgeAwarePack(player);
+        pack.blockActivationResult = true;
+        pack.bridgeUseResult = true;
+
+        MovingObjectPosition target = new MovingObjectPosition(1, 2, 3, 1, Vec3.createVectorHelper(1.5D, 2.5D, 3.5D));
+        assertTrue(pack.performUse(target));
+        assertEquals(1, pack.blockActivationCalls);
+        assertEquals(0, pack.directItemUseCalls);
+        assertEquals(1, pack.bridgeUseCalls);
+        assertTrue(pack.bridgeSawBlockUsed);
+        assertFalse(pack.bridgeSawItemUsed);
+    }
+
+    @Test
+    void jumpActionTriggersMovementCompatBridge() {
+        StubPlayer player = stubPlayer();
+        player.onGround = true;
+        MovementBridgeAwarePack pack = new MovementBridgeAwarePack(player);
+        pack.movementBridgeResult = true;
+        pack.start(ActionType.JUMP, Action.once());
+
+        pack.onUpdate();
+
+        assertEquals(1, pack.movementBridgeCalls);
+        assertEquals(PlayerActionPack.MovementTrigger.JUMP, pack.lastMovementTrigger);
+    }
+
+    @Test
+    void enablingSneakTriggersMovementCompatBridgeOnlyOnLeadingEdge() {
+        StubPlayer player = stubPlayer();
+        MovementBridgeAwarePack pack = new MovementBridgeAwarePack(player);
+        pack.movementBridgeResult = true;
+
+        pack.setSneaking(true);
+        assertEquals(1, pack.movementBridgeCalls);
+        assertEquals(PlayerActionPack.MovementTrigger.SNEAK, pack.lastMovementTrigger);
+
+        pack.setSneaking(true);
+        assertEquals(1, pack.movementBridgeCalls);
+
+        pack.setSneaking(false);
+        pack.setSneaking(true);
+        assertEquals(2, pack.movementBridgeCalls);
+    }
+
+    @Test
+    void getTargetFindsEntityWhenEyeStartsInsideExpandedHitbox() {
+        StubPlayer player = stubPlayer();
+        StubWorld world = allocate(StubWorld.class);
+        setField(Entity.class, player, "worldObj", world);
+        player.posX = 0.0D;
+        player.posY = 0.0D;
+        player.posZ = 0.0D;
+        player.rotationYaw = 0.0F;
+        player.rotationPitch = 0.0F;
+        setField(
+            Entity.class,
+            player,
+            "boundingBox",
+            AxisAlignedBB.getBoundingBox(-0.3D, 0.0D, -0.3D, 0.3D, 1.8D, 0.3D));
+
+        StubTargetEntity target = allocate(StubTargetEntity.class);
+        setField(Entity.class, target, "worldObj", world);
+        setField(
+            Entity.class,
+            target,
+            "boundingBox",
+            AxisAlignedBB.getBoundingBox(-0.1D, 1.2D, -0.1D, 0.1D, 1.8D, 0.1D));
+        world.entities = java.util.Collections.<Entity>singletonList(target);
+
+        PlayerActionPack pack = new PlayerActionPack(player);
+        MovingObjectPosition result = pack.getTarget();
+
+        assertTrue(result != null && result.typeOfHit == MovingObjectPosition.MovingObjectType.ENTITY);
+        assertEquals(target, result.entityHit);
+    }
+
+    @Test
+    void attackWithoutTargetStillSwings() {
+        StubPlayer player = stubPlayer();
+        VisualFeedbackPack pack = new VisualFeedbackPack(player);
+
+        assertTrue(pack.performAttack(null));
+        assertEquals(1, pack.swingCalls);
+    }
+
+    @Test
+    void useWithoutAnyInteractionStillSwings() {
+        StubPlayer player = stubPlayer();
+        VisualFeedbackPack pack = new VisualFeedbackPack(player);
+
+        assertTrue(pack.performUse(null));
+        assertEquals(1, pack.swingCalls);
+    }
+
+    @Test
+    void attackFallsBackToDirectDamageWhenVanillaAttackHasNoEffect() {
+        StubPlayer player = stubPlayer();
+        DamageTrackingEntity target = new DamageTrackingEntity();
+        FallbackAttackPack pack = new FallbackAttackPack(player);
+
+        assertTrue(pack.performAttack(new MovingObjectPosition(target, Vec3.createVectorHelper(0.0D, 0.0D, 0.0D))));
+        assertEquals(1, target.damageCalls);
+        assertTrue(target.lastDamage > 0.0F);
+        assertEquals(player, target.lastDamageSource.getEntity());
+    }
+
+    @Test
+    void attackFallsBackWhenVanillaAttackOnlyMarksVelocityWithoutDamagingLivingTarget() {
+        VelocityOnlyAttackPlayer player = stubPlayer(VelocityOnlyAttackPlayer.class);
+        RejectingLivingTarget target = new RejectingLivingTarget();
+        target.setHealth(20.0F);
+        FallbackAttackPack pack = new FallbackAttackPack(player);
+
+        assertTrue(pack.performAttack(new MovingObjectPosition(target, Vec3.createVectorHelper(0.0D, 0.0D, 0.0D))));
+        assertTrue(target.getHealth() < 20.0F);
+    }
+
+    @Test
+    void attackForceDamagesLivingTargetWhenAttackEntityFromIsCanceled() {
+        StubPlayer player = stubPlayer();
+        RejectingLivingTarget target = new RejectingLivingTarget();
+        target.setHealth(20.0F);
+        FallbackAttackPack pack = new FallbackAttackPack(player);
+
+        assertTrue(pack.performAttack(new MovingObjectPosition(target, Vec3.createVectorHelper(0.0D, 0.0D, 0.0D))));
+        assertTrue(target.getHealth() < 20.0F);
+        assertEquals(0, target.damageCalls);
+    }
+
     private static StubPlayer stubPlayer() {
-        StubPlayer player = allocate(StubPlayer.class);
+        return stubPlayer(StubPlayer.class);
+    }
+
+    private static <T extends StubPlayer> T stubPlayer(Class<T> type) {
+        T player = allocate(type);
         player.inventory = new InventoryPlayer(player);
         player.inventoryContainer = allocate(StubContainer.class);
-        setField(EntityPlayerMP.class, player, "theItemInWorldManager", allocate(StubItemInWorldManager.class));
-        player.dropModes = new Boolean[4];
+        StubItemInWorldManager manager = allocate(StubItemInWorldManager.class);
+        setField(ItemInWorldManager.class, manager, "gameType", WorldSettings.GameType.SURVIVAL);
+        setField(EntityPlayerMP.class, player, "theItemInWorldManager", manager);
+        setField(Entity.class, player, "worldObj", allocate(WorldServer.class));
+        setField(EntityPlayer.class, player, "eyeHeight", 1.62F);
+        setField(StubPlayer.class, player, "dropModes", new Boolean[4]);
         return player;
     }
 
@@ -163,6 +330,86 @@ class PlayerActionPackTest {
         }
     }
 
+    private static final class BridgeAwarePack extends PlayerActionPack {
+
+        private boolean blockActivationResult;
+        private boolean directItemUseResult;
+        private boolean bridgeUseResult;
+        private int blockActivationCalls;
+        private int directItemUseCalls;
+        private int bridgeUseCalls;
+        private boolean bridgeSawBlockUsed;
+        private boolean bridgeSawItemUsed;
+
+        private BridgeAwarePack(EntityPlayerMP player) {
+            super(player);
+        }
+
+        @Override
+        protected boolean performBlockActivationUse(MovingObjectPosition target, ItemStack held, float hitX, float hitY,
+            float hitZ) {
+            blockActivationCalls++;
+            return blockActivationResult;
+        }
+
+        @Override
+        protected boolean performDirectItemUse(ItemStack held) {
+            directItemUseCalls++;
+            return directItemUseResult;
+        }
+
+        @Override
+        protected boolean performClientUseBridge(MovingObjectPosition target, ItemStack held, boolean blockUsed,
+            boolean itemUsed) {
+            bridgeUseCalls++;
+            bridgeSawBlockUsed = blockUsed;
+            bridgeSawItemUsed = itemUsed;
+            return bridgeUseResult;
+        }
+    }
+
+    private static final class MovementBridgeAwarePack extends PlayerActionPack {
+
+        private boolean movementBridgeResult;
+        private int movementBridgeCalls;
+        private MovementTrigger lastMovementTrigger;
+
+        private MovementBridgeAwarePack(EntityPlayerMP player) {
+            super(player);
+        }
+
+        @Override
+        protected boolean performMovementCompatBridge(MovementTrigger trigger) {
+            movementBridgeCalls++;
+            lastMovementTrigger = trigger;
+            return movementBridgeResult;
+        }
+    }
+
+    private static final class VisualFeedbackPack extends PlayerActionPack {
+
+        private int swingCalls;
+
+        private VisualFeedbackPack(EntityPlayerMP player) {
+            super(player);
+        }
+
+        @Override
+        protected void performSwingAnimation() {
+            swingCalls++;
+        }
+    }
+
+    private static final class FallbackAttackPack extends PlayerActionPack {
+
+        private FallbackAttackPack(EntityPlayerMP player) {
+            super(player);
+        }
+
+        @Override
+        protected void performSwingAnimation() {}
+    }
+
     private static class StubPlayer extends EntityPlayerMP {
 
         private boolean sneakingState;
@@ -206,6 +453,16 @@ class PlayerActionPackTest {
         public void sendContainerToPlayer(Container container) {}
     }
 
+    private static final class VelocityOnlyAttackPlayer extends StubPlayer {
+
+        @Override
+        public void attackTargetEntityWithCurrentItem(Entity targetEntity) {
+            if (targetEntity != null) {
+                targetEntity.velocityChanged = true;
+            }
+        }
+    }
+
     private static final class StubContainer extends Container {
 
         @Override
@@ -218,6 +475,120 @@ class PlayerActionPackTest {
 
         private StubItemInWorldManager() {
             super(null);
+        }
+    }
+
+    private static class StubWorld extends WorldServer {
+
+        private java.util.List<Entity> entities = java.util.Collections.emptyList();
+
+        private StubWorld() {
+            super(null, null, null, 0, null, null);
+        }
+
+        @Override
+        public MovingObjectPosition func_147447_a(Vec3 start, Vec3 end, boolean stopOnLiquid,
+            boolean ignoreBlockWithoutBoundingBox, boolean returnLastUncollidableBlock) {
+            return null;
+        }
+
+        @Override
+        public java.util.List<Entity> getEntitiesWithinAABBExcludingEntity(Entity entity, AxisAlignedBB bounds) {
+            return entities;
+        }
+    }
+
+    private static class StubTargetEntity extends Entity {
+
+        private StubTargetEntity() {
+            super((World) null);
+        }
+
+        @Override
+        protected void entityInit() {}
+
+        @Override
+        protected void readEntityFromNBT(net.minecraft.nbt.NBTTagCompound tag) {}
+
+        @Override
+        protected void writeEntityToNBT(net.minecraft.nbt.NBTTagCompound tag) {}
+
+        @Override
+        public boolean canBeCollidedWith() {
+            return true;
+        }
+    }
+
+    private static final class DamageTrackingEntity extends Entity {
+
+        private int damageCalls;
+        private float lastDamage;
+        private DamageSource lastDamageSource;
+
+        private DamageTrackingEntity() {
+            super((World) null);
+        }
+
+        @Override
+        public boolean attackEntityFrom(DamageSource source, float amount) {
+            damageCalls++;
+            lastDamage = amount;
+            lastDamageSource = source;
+            velocityChanged = true;
+            return true;
+        }
+
+        @Override
+        protected void entityInit() {}
+
+        @Override
+        protected void readEntityFromNBT(net.minecraft.nbt.NBTTagCompound tag) {}
+
+        @Override
+        protected void writeEntityToNBT(net.minecraft.nbt.NBTTagCompound tag) {}
+    }
+
+    private static final class RejectingLivingTarget extends net.minecraft.entity.EntityLivingBase {
+
+        private int damageCalls;
+
+        private RejectingLivingTarget() {
+            super((World) null);
+        }
+
+        @Override
+        public boolean attackEntityFrom(DamageSource source, float amount) {
+            damageCalls++;
+            return false;
+        }
+
+        @Override
+        protected void entityInit() {
+            super.entityInit();
+        }
+
+        @Override
+        public void readEntityFromNBT(net.minecraft.nbt.NBTTagCompound tag) {}
+
+        @Override
+        public void writeEntityToNBT(net.minecraft.nbt.NBTTagCompound tag) {}
+
+        @Override
+        public ItemStack getHeldItem() {
+            return null;
+        }
+
+        @Override
+        public ItemStack getEquipmentInSlot(int slot) {
+            return null;
+        }
+
+        @Override
+        public void setCurrentItemOrArmor(int slot, ItemStack stack) {}
+
+        @Override
+        public ItemStack[] getLastActiveItems() {
+            return new ItemStack[0];
         }
     }
 }

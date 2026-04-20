@@ -1,12 +1,28 @@
-﻿## 2026-04-18：调研记录
-
-
-# TODO 列表
+﻿# TODO 列表
 
 ## 当前计划
+- [ ] 选择 nextgen fake player runtime Wave A 的执行方式：`subagent-driven` 或 `inline`
 - [ ] 为 GTstaff 假人背包管理界面接入 Baubles Expanded 饰品栏支持：在现有统一背包容器中合并展示并编辑假人的饰品槽，槽位数量、类型与滚动布局跟随 Baubles Expanded 当前配置
 
 ## 已完成
+- [x] 编写 nextgen fake player runtime Wave A implementation plan：保存到 `docs/superpowers/plans/2026-04-20-gtstaff-nextgen-fake-player-runtime-wave-a.md`
+- [x] 审阅并确认 `docs/superpowers/specs/2026-04-20-gtstaff-nextgen-fake-player-runtime-design.md`，确认后进入 implementation plan 阶段
+- [x] 为 GTstaff 编写并提交 nextgen fake player runtime 重构设计 spec：明确以 Forge `FakePlayer` 语义为核心、双轨迁移、全量功能平移、不接受降级的总体方案
+- [x] 对照 `fabric-carpet-master` 排查 fake player 攻击无效问题：确认 carpet 的攻击实现对 GTstaff 只有设计参考价值，当前更应继续排查命中链与 Forge fake player 兼容灰区
+- [x] 重新确认并打包当前 v1.0.2 jar：执行离线 `assemble`，确认 `gtstaff-v1.0.2.jar` / `-dev.jar` / `-sources.jar` 已是最新产物
+- [x] 修复 fake player 攻击 living 实体仍然无伤害的问题：当原版左键没有造成真实掉血时，直接在服务端强制扣减目标生命值，避免伤害回退继续被事件链吞掉
+- [x] 重新打包当前 v1.0.2 jar：把 fake player 对 living 实体的强制伤害回退重新编入 `gtstaff-v1.0.2.jar` / `-dev.jar` / `-sources.jar`
+- [x] 重新打包当前 v1.0.2 jar：把 fake player 实体攻击 fallback 修复重新编入 `gtstaff-v1.0.2.jar` / `-dev.jar` / `-sources.jar`
+- [x] 修复 fake player 攻击实体时无伤害的问题：保留原版左键主链，但在这次攻击没有产生任何可观察受击结果时补一次最小服务端伤害 fallback
+- [x] 重新打包当前 v1.0.2 jar：把 `attack/use` 无目标时的空挥手反馈重新编入 `gtstaff-v1.0.2.jar` / `-dev.jar` / `-sources.jar`
+- [x] 让 `attack/use` 指令无目标时也执行空挥手反馈：即使没有实际命中实体或方块，客户端仍能看到假人立刻做出一次可见动作
+- [x] 重新打包当前 v1.0.2 jar：把 fake player 实体攻击修复重新编入 `gtstaff-v1.0.2.jar` / `-dev.jar` / `-sources.jar`
+- [x] 修复 fake player 近距离无法锁定实体攻击：让实体目标选择对齐 vanilla `getMouseOver()`，避免贴近实体时左键完全取不到目标
+- [x] 修正版本号到 v1.0.2 并重新打包：确认新功能已合并到工作区与产物后，重新生成 `gtstaff-v1.0.2.jar` / `-dev.jar` / `-sources.jar`
+- [x] 重新打包当前 GTstaff jar：运行离线 `assemble`，生成最新的 `gtstaff-v1.0.1.jar` / `-dev.jar` / `-sources.jar`
+- [x] 为 GTstaff 假人新增 OpenBlocks 电梯类移动触发兼容：把 `jump` / `sneak` 的客户端移动事件缺口收口到独立兼容桥，让假人可在电梯方块上正常上下楼
+- [x] 修复 `log.md` 乱码并按日期倒序整理：统一改回正常 UTF-8 内容，并保持最新记录在最前
+- [x] 为 GTstaff 假人新增“伪客户端物品使用桥”兼容：在普通 `/player <name> use` 之后补一层可扩展的客户端效果桥，先兼容 TST `ItemYamato` 这类把主效果写在客户端右键链路里的物品
 - [x] 发布 v1.0.1：更新项目版本号、重新打包新 jar，并将代码与 release 资产推送到 GitHub
 - [x] 修复假人仍回退默认皮的问题：`SkinPortCompat` 现在先解析在线 UUID，再走服务端 secure `fillProfileProperties(..., true)` 生成带签名 `textures`；同时补上无 `SkinPort` 时的服务端 profile cache/repository 回退与回归测试
 - [x] 使用 `./gradlew.bat --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true assemble` 打包当前 GTstaff jar

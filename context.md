@@ -1,14 +1,13 @@
-﻿## 2026-04-18：外部参考调研
-- 已完成对 `CustomNPC-Plus-master` 的对照调研；当前未引入其代码，但后续可优先参考其命令分层、可序列化 GUI 状态、分块同步、JSON/NBT 模板持久化与路径导航设计
-# 项目上下文
+﻿# 项目上下文
 
 ## 基本信息
 - Mod Name: GTstaff
 - Mod ID: gtstaff
-- Version: v1.0.1
+- Version: v1.0.2
 - Root Package: `com.andgatech.gtstaff`
 - Target: MC 1.7.10 + Forge 10.13.4.1614 + GTNH
 - GitHub: https://github.com/HOMEFTW/GTstaff
+- 最新确认产物：`build/libs/gtstaff-v1.0.2.jar`、`build/libs/gtstaff-v1.0.2-dev.jar`、`build/libs/gtstaff-v1.0.2-sources.jar`（2026-04-20 再次执行离线 `assemble`，结果为 `UP-TO-DATE`）
 
 ### Mod 入口与代理
 - `GTstaff`：`@Mod` 入口类，定义 MODID/VERSION/LOG，通过 `@SidedProxy` 委托所有 FML 生命周期事件
@@ -17,6 +16,12 @@
 
 ### Mixin 接口
 - `IFakePlayerHolder`：单方法接口 `PlayerActionPack getActionPack()`，供 Mixin 在 `EntityPlayerMP` 上访问 action pack
+
+### 架构备注
+- 参考 `fabric-carpet-master` 后确认：其 fake player 攻击链依赖稳定的射线命中与原生 `player.attack(entity)`，并未使用额外伤害 fallback；因此对 GTstaff 更有参考价值的是“命中链设计”而不是“攻击 API 替换”
+- GTNH/Forge 生态中不少外部模组按 `instanceof net.minecraftforge.common.util.FakePlayer` 或 `playerNetServerHandler == null` 识别 fake player；GTstaff 假人当前不属于这两类，存在兼容灰区
+- nextgen fake player runtime 总体设计已写入 `docs/superpowers/specs/2026-04-20-gtstaff-nextgen-fake-player-runtime-design.md`，并以 commit `a7e2dc0` 单独提交；后续实现应按 spec 中的 `Wave A-D` 分阶段推进
+- nextgen fake player runtime 的首个实现计划已写入 `docs/superpowers/plans/2026-04-20-gtstaff-nextgen-fake-player-runtime-wave-a.md`；该计划仅覆盖 Wave A，不包含动作链迁移与默认 runtime 切换
 
 ## 已实现内容
 
@@ -28,7 +33,19 @@
 - `FakePlayerProfiles`：集中处理“新生成 fake player 应该使用哪个 `GameProfile`”；当前会优先走 `SkinPortCompat.resolveProfile(name)`，拿到正版皮肤 profile 后复制一份再用于创建假人，失败则回退到离线 UUID profile
 - `FakePlayer.runLivingUpdate(...)`：在 `EntityPlayerMP.onUpdate()` 之后直接执行 `onLivingUpdate()`，补上 fake player 的移动/跳跃/碰撞链路，但不再调用 `onUpdateEntity()` 触发第二次 `PlayerTickEvent`
 - `FakePlayerRegistry.restorePersisted(...)`：现在会返回本轮实际恢复出的 bot 列表，并保持持久化顺序，供恢复后的补皮调度复用
-- `PlayerActionPack`：支持 `USE`、`ATTACK`、`JUMP`、`DROP_ITEM`、`DROP_STACK`，包含 `turn`、`stopMovement`、`setSlot` 与挖掘状态机
+- `PlayerActionPack`：支持 `USE`、`ATTACK`、`JUMP`、`DROP_ITEM`、`DROP_STACK`，包含 `turn`、`stopMovement`、`setSlot` 与挖掘状态机；`USE` 现在会在常规服务端右键链路之后继续尝试“伪客户端物品使用桥”，`JUMP` 与“开始潜行”则会继续尝试“移动触发兼容桥”；实体攻击目标选择已补齐 vanilla `getMouseOver()` 的近距离命中逻辑；`attack/use` 在没有命中目标时也会执行一次可见空挥手反馈；实体左键会先保留原版 `attackTargetEntityWithCurrentItem(...)` 主链，但若 living 目标没有产生真实掉血或死亡，则直接在服务端强制扣减生命值并设置受击状态，避免伤害回退继续被外部事件链取消
+
+### 客户端效果桥兼容
+- `FakePlayerClientUseCompat`：为 fake player 的 `/player <name> use` 提供一层可扩展的“伪客户端物品使用桥”；当前通过纯反射方式按需探测 EnderIO / EnderCore / TST 运行时类，避免 GTstaff 对这些模组形成硬编译或硬运行时依赖
+- 当前默认仅注册 `TstYamatoClientUseHandler`：用于兼容 TST `com.Nxer.TwistSpaceTechnology.common.item.ItemYamato`
+- `TstYamatoClientUseHandler`：不去伪造整个客户端，而是复用 EnderIO `TravelController` 的目标搜索逻辑，并把原本客户端发出的 `PacketTravelEvent` 改为服务端直接执行 `doServerTeleport(...)`
+- 兼容触发策略：仅在假人非潜行、未成功右键激活方块时尝试阎魔刀桥接，避免覆盖真实的方块交互；普通物品与未匹配 handler 的物品仍保持原有 `use` 行为
+
+### 移动触发兼容
+- `FakePlayerMovementCompat`：为 fake player 的 `jump` 与“开始潜行”提供一层可扩展的“移动触发兼容桥”；当前通过纯反射方式按需探测 `OpenBlocks` 电梯相关类，避免 GTstaff 对外部模组形成硬依赖
+- 当前默认仅注册 `OpenBlocksElevatorHandler`：用于兼容 `OpenBlocks` 电梯方块依赖客户端 `PlayerMovementEvent` / `ElevatorActionEvent` 的上下楼逻辑
+- `OpenBlocksElevatorHandler`：服务端按原模组客户端判定方式检查假人脚下电梯方块，再反射调用 `ElevatorActionHandler.activate(...)`，对 `jump` 映射上行、对“开始潜行”映射下行
+- 兼容触发策略：`jump` 每次执行时都会尝试一次移动兼容桥；`sneak` 只在从非潜行切到潜行的 leading edge 尝试一次，避免持续潜行时重复触发
 
 ### SkinPort 兼容
 - `SkinPortCompat`：通过反射可选接入 `lain.mods.skins.impl.MojangService`，但现在只把它用于按名字解析在线 `GameProfile`/UUID，不再直接信任 `SkinPort` 返回的 filled profile
@@ -140,6 +157,8 @@
 - `src/test/java/com/andgatech/gtstaff/fakeplayer/MachineMonitorServiceTest.java`
 - `src/test/java/com/andgatech/gtstaff/fakeplayer/PlayerActionPackTest.java`
 - `src/test/java/com/andgatech/gtstaff/integration/SkinPortCompatTest.java`
+- `src/test/java/com/andgatech/gtstaff/integration/FakePlayerClientUseCompatTest.java`
+- `src/test/java/com/andgatech/gtstaff/integration/FakePlayerMovementCompatTest.java`
 - `src/test/java/com/andgatech/gtstaff/integration/ServerUtilitiesCompatTest.java`
 - `src/test/java/com/andgatech/gtstaff/command/CommandPlayerTest.java`
 - `src/test/java/com/andgatech/gtstaff/ClientProxyTest.java`
@@ -152,10 +171,13 @@
 - 已通过 `./gradlew.bat --offline test` 作为当前分支的最终自动化 smoke test
 - 已通过 `./gradlew.bat --offline assemble` 产出客户端测试用 jar，产物位于 `build/libs/`
 - 已通过 `./gradlew.bat --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true assemble` 重新打包当前工作区产物
-- 当前最新 jar：`build/libs/gtstaff-v1.0.1.jar`
-- 当前最新 dev jar：`build/libs/gtstaff-v1.0.1-dev.jar`
-- 当前最新 sources jar：`build/libs/gtstaff-v1.0.1-sources.jar`
-- 最新重新打包 jar：`build/libs/gtstaff-b166ed7-master+b166ed77c1-dirty.jar`（含监控增强、颜色分配、中文翻译、提醒频率按钮）
+- 当前最新 jar：`build/libs/gtstaff-v1.0.2.jar`
+- 当前最新 dev jar：`build/libs/gtstaff-v1.0.2-dev.jar`
+- 当前最新 sources jar：`build/libs/gtstaff-v1.0.2-sources.jar`
+- 最新重新打包 jar：`build/libs/gtstaff-v1.0.2.jar`
+- 当前 `v1.0.2` 产物已重新包含 fake player 实体攻击目标修复
+- 当前 `v1.0.2` 产物已重新包含 fake player 实体攻击 fallback 修复
+- 当前 `v1.0.2` 产物已重新包含 `attack/use` 无目标时的可见空挥手反馈
 - 最新客户端测试主 jar：`build/libs/gtstaff-v0.1.1-master+1f334d4b20-dirty.jar`（含敌对生物驱逐器、其他功能页签）
 
 ## 依赖
@@ -164,8 +186,12 @@
 - `ServerUtilities`：当前通过可选 mixin 接入其 `ServerUtils.isFake(...)` 判断链，不要求 GTstaff 在无该模组环境下强依赖加载
 
 ## 架构备注
+- 已完成对 `CustomNPC-Plus-master` 的对照调研；当前未引入其代码，但后续可优先参考其命令分层、可序列化 GUI 状态、分块同步、JSON/NBT 模板持久化与路径导航设计
 - `IFakePlayerHolder` 负责把 `PlayerActionPack` 暴露给 `FakePlayer`
 - `PlayerActionPack` 直接适配 1.7.10 `ItemInWorldManager`，没有照搬现代 Carpet API
+- `PlayerActionPack.getTarget()` 的实体选择当前刻意贴近 vanilla `EntityRenderer.getMouseOver()`：搜索盒使用 `boundingBox.addCoord(lookVec * reach).expand(1,1,1)`，并保留 `isVecInside(...)` 分支，避免假人贴脸攻击时取不到实体
+- `PlayerActionPack.performSwingAnimation()` 统一负责假人的挥手可见反馈；即使 `attack/use` 没有真实命中，客户端侧也应至少能看到一次空挥手
+- `PlayerActionPack.performEntityAttack(...)` 当前采用“原版先执行、仅在攻击后目标没有任何可观察受击迹象时才补 fallback”的策略，尽量兼容会吞掉 `AttackEntityEvent` / 原版伤害链结果的整合环境，同时避免默认双击
 - `FakePlayerRegistry.load(...)` 只负责读取持久化快照；实体恢复由 `restorePersisted(...)` 在服务端启动阶段统一执行
 - 自动恢复采用“持久化快照 -> `FakePlayerRestoreScheduler` 延后调度 -> `FakePlayer.restorePersisted(...)` -> `FakePlayerSkinRestoreScheduler` 异步补皮 -> 主线程 `FakePlayer.rebuildRestoredWithProfile(...)` 安全替换”的流程，避免在纯 IO 阶段直接创建 Minecraft 实体，同时不阻塞开服
 - `CommonProxy.serverStarted(...)` 当前只负责读取 registry 并登记待恢复状态，不再直接在 FML `serverStarted` 事件里构建 fake player
@@ -187,6 +213,7 @@
 - 当前已完成自动化 smoke test，但游戏内人工烟测仍待在可启动客户端/服务端的环境中补做
 - `./gradlew.bat --offline build` 当前会在 `spotlessJavaCheck` 因 CRLF/LF 格式差异失败，但不影响 `assemble`、`test`、`compileJava` 与 reobf jar 产出
 - 当前 Gradle 在线解析 `gtnhgradle:1.+` 偶发 TLS 握手失败，验证命令优先使用 `--offline`
+- 项目根目录的 `log.md` 统一按 UTF-8 编码维护，并按日期倒序排列，最新记录放在最前
 - `FollowService.tick()` 在 `actionPack.onUpdate()` 之后执行，覆盖 actionPack 设置的 moveForward/moveStrafing；跟随优先级高于手动 move 命令
 - 跨维度传送通过 `FollowService` 内部的手动迁移流程实现：先从旧世界 `PlayerManager/playerEntities/loadedEntityList` 摘除，再在新世界预加载 chunk 后 `spawnEntityInWorld(...)`，失败时由快照回滚，不走 `transferPlayerToDimension`
 - `ServerUtilities` 兼容不去改 `Universe` 等分散统计入口，而是统一挂接在 `ServerUtils.isFake(...)` 的中心判断点，减少后续版本漂移时的漏改风险
