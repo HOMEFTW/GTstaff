@@ -555,3 +555,19 @@
 ### 做出的决定
 - 保留 `SkinPort` 作为“可选在线 UUID 解析器”，但不再信任它返回的 filled profile 可直接用于客户端皮肤加载
 - 皮肤链路的成功标准从“有 `textures` 属性”提升为“有带签名的 `textures` 属性”，避免再次把客户端一定会拒绝的 unsigned profile 送进生成/恢复流程
+# 2026-04-20：GTstaff 假人统一背包接入 Baubles Expanded 设计
+
+### 已完成
+- 重新阅读 `GTstaff` 现有假人背包管理链路与 `Baubles-Expanded-master` 的 `BaublesApi`、`ContainerPlayerExpanded`、`SlotBauble` 相关实现
+- 与用户确认本次需求边界：`Baubles Expanded` 作为硬依赖、饰品栏并入现有统一背包容器、槽位数量与类型完全跟随当前配置
+- 新增设计文档 `docs/superpowers/specs/2026-04-20-gtstaff-fake-player-baubles-inventory-design.md`
+- 更新 `ToDOLIST.md`，把“为 GTstaff 假人统一背包接入 Baubles Expanded 饰品栏支持”登记为当前计划
+
+### 遇到的问题
+- **`ContainerPlayerExpanded` 默认以当前真人玩家为宿主**：其内部同时组合 crafting、玩家盔甲栏、玩家主背包和玩家自己的 baubles 库存，不适合直接复用为假人统一背包
+
+### 做出的决定
+- 采用“保留 GTstaff 现有打开链路，扩展 `FakePlayerInventoryContainer` / `FakePlayerInventoryGui`，底层直接接入假人的 Baubles 库存与槽位规则”的方案
+- 本轮先停在设计与规格确认，不提前进入实现阶段
+
+---
