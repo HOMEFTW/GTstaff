@@ -110,12 +110,15 @@
 - `FakePlayerLookWindow`：已接入真实交互，可输入 bot 名称，使用方向按钮或 `Look At` 坐标触发 `/player look`
 - `FakePlayerInventoryWindow`：保留旧的只读文本快照窗口实现，但已不再是主路径；主管理台的 `Inventory` 页签现在打开原版容器
 - `InventorySnapshot`：会区分 hotbar、main inventory、armor，并记录当前选中的 hotbar 槽位；UI 当前使用紧凑文本视图展示完整库存
-- `FakePlayerInventoryView`：将 fake player 背包映射为固定 40 槽布局：`0-3` 护甲、`4-12` hotbar、`13-39` 主背包
+- `FakePlayerInventoryView`：将 fake player 背包映射为固定 41 槽布局：`0-3` 护甲、`4` 副手、`5-13` hotbar、`14-40` 主背包
 - `FakePlayerArmorSlot`：限定护甲槽只接受对应类型护甲
-- `FakePlayerInventoryContainer`：负责 fake player 与当前玩家背包的槽位布局、Shift 点击互传、点击 hotbar 槽同步 `currentItem`
+- `FakePlayerOffhandSlot`：统一背包中的假人副手槽，运行时复用 Backhand 当前副手黑名单规则
+- `FakePlayerInventoryContainer`：负责 fake player 与当前玩家背包的槽位布局、Shift 点击互传、点击 hotbar 槽同步 `currentItem`；当前优先级为护甲 -> 饰品 -> 副手 -> 主背包
 - `FakePlayerInventoryGuiHandler`：通过 Forge `IGuiHandler` 打通 `MUI2 -> openGui -> Container/GuiContainer`
 - `FakePlayerInventoryGui`：原版 chest-style `GuiContainer`，会高亮 fake player 当前主手 hotbar 槽位
 - 当前工作树中的统一背包实现已接入 `Baubles Expanded`：右侧饰品区跟随 `BaubleExpandedSlots` 当前配置动态生成，支持滚轮/滚动条浏览，并复用 `InventoryBaubles` 与 `SlotBauble`
+- 当前工作树中的统一背包实现已接入 `Backhand`：左上装备区在盔甲槽旁边追加真实副手槽，服务端读写通过 `BackhandCompat` 反射桥接到 `InventoryPlayer` 的 Backhand 扩展方法，游戏加载阶段由 Forge `required-after:backhand` 强制要求安装 Backhand
+- `FakePlayer.syncEquipmentToWatchers()`：现在除了原版主手/护甲 `S04PacketEntityEquipment` 外，还会通过 `BackhandCompat.syncOffhandToWatchers(...)` 显式触发 Backhand 副手同步，修复假人副手物品写入后客户端不显示的问题
 
 ### Mixin
 - `EntityPlayerMPMixin`：为 `FakePlayer` 注入并 tick `PlayerActionPack`
@@ -163,6 +166,7 @@
 - JUnit Jupiter 5.10.2（测试）
 - GTNHLib：当前已实际参考并接入 `ServerThreadUtil`；`AboveHotbarHUD` / `PacketMessageAboveHotbar` 与 `ConfigSyncHandler` 记录为后续可选参考
 - `Baubles Expanded`：当前统一背包实现已作为硬依赖接入，统一背包右侧饰品区直接复用其 `InventoryBaubles`、`SlotBauble` 与动态槽位配置
+- `Backhand`：当前统一背包中的假人副手槽已在 Forge `@Mod` 依赖链中声明为 `required-after:backhand`，运行时通过反射桥接读取其副手库存扩展与黑名单校验
 - `ServerUtilities`：当前通过可选 mixin 接入其 `ServerUtils.isFake(...)` 判断链，不要求 GTstaff 在无该模组环境下强依赖加载
 
 ## 架构备注

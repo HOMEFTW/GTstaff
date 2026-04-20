@@ -603,3 +603,35 @@
 - Shift 点击优先级固定为“护甲 > 副手 > 饰品 > 普通背包”
 
 ---
+# 2026-04-20：完成 GTstaff 假人统一背包 Backhand 副手接入
+
+### 已完成
+- 在统一假人背包中加入真实副手槽：`FakePlayerInventoryView` 现为 41 槽布局，顺序为护甲 -> 副手 -> hotbar -> 主背包
+- 新增 `FakePlayerOffhandSlot` 与 `BackhandCompat`，让统一背包在运行时跟随 Backhand 当前副手黑名单，并读写假人的真实副手物品
+- 调整统一背包 Shift 点击优先级为护甲 -> 饰品 -> 副手 -> 主背包，避免 `IBauble` 物品被副手槽抢走
+- 在 `GTstaff` 的 `@Mod` 元数据中加入 `required-after:Baubles|Expanded` 与 `required-after:backhand`，把两者都声明为运行时必需依赖
+- 通过 `FakePlayerInventoryViewTest` 与 `FakePlayerInventoryContainerTest`，并使用 `./gradlew.bat --offline --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true build -x test` 重新打包 `build/libs/gtstaff-v1.0.1.jar`
+
+### 遇到的问题
+- **本地无法在线解析 `com.github.GTNewHorizons:Backhand` 运行时坐标**：离线缓存缺失时，`gtnhconvention` 在线拉取 manifest 又会失败，导致不能稳定依赖远程 Maven 坐标做本地验证
+
+### 做出的决定
+- 用 Forge `required-after:backhand` 保证游戏运行时硬依赖，再通过 `BackhandCompat` 反射桥接到 Backhand 当前库存扩展方法，避免本地构建被远程仓库状态卡死，同时保持游戏内行为跟随 Backhand 当前实现
+
+---
+# 2026-04-20：修复假人副手物品放入后客户端不显示
+
+### 已完成
+- 确认根因在于 `FakePlayer.syncEquipmentToWatchers()` 之前只同步原版主手/护甲，不会显式触发 Backhand 的副手同步包
+- 在 `BackhandCompat` 中新增副手同步桥 `syncOffhandToWatchers(...)`，运行时通过反射构造 `OffhandSyncItemPacket` 并调用 Backhand 的跟踪玩家同步入口
+- `FakePlayer.syncEquipmentToWatchers()` 现已在原版装备包之后补发一次副手同步，确保假人副手变化能及时同步到客户端显示
+- 新增回归测试 `FakePlayerBackhandSyncTest`，并通过 `FakePlayerBackhandSyncTest`、`FakePlayerInventoryViewTest`、`FakePlayerInventoryContainerTest`
+- 重新打包 `build/libs/gtstaff-v1.0.1.jar` 供客户端复测
+
+### 遇到的问题
+- **副手写入成功但显示链缺一段**：统一背包已经能把物品写入假人的真实副手库存，但 GTstaff 自己的装备同步方法只发原版 `S04PacketEntityEquipment`，客户端不会因此自动刷新 Backhand 副手
+
+### 做出的决定
+- 不依赖 Backhand 在常规 tick 中“顺带”检测到变化，而是在 GTstaff 的显式装备同步点补发一次 Backhand 副手同步，保证 UI 改动后的显示结果可预期
+
+---

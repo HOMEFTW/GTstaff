@@ -10,44 +10,149 @@ import net.minecraft.item.ItemStack;
 
 import com.andgatech.gtstaff.fakeplayer.FakePlayer;
 
+import baubles.api.IBauble;
+import baubles.api.expanded.BaubleExpandedSlots;
+import baubles.common.BaublesConfig;
+import baubles.common.container.InventoryBaubles;
+import baubles.common.container.SlotBauble;
+import baubles.common.lib.PlayerHandler;
+
 public class FakePlayerInventoryContainer extends Container {
 
     private static final int FAKE_SLOT_COUNT = FakePlayerInventoryView.SLOT_COUNT;
     private static final int PLAYER_MAIN_SLOT_COUNT = 27;
     private static final int PLAYER_HOTBAR_SLOT_COUNT = 9;
     private static final int PLAYER_SLOT_COUNT = PLAYER_MAIN_SLOT_COUNT + PLAYER_HOTBAR_SLOT_COUNT;
-    private static final int PLAYER_SLOT_START = FAKE_SLOT_COUNT;
-    private static final int PLAYER_SLOT_END = PLAYER_SLOT_START + PLAYER_SLOT_COUNT;
-    private static final int HOTBAR_SLOT_START = FakePlayerInventoryView.ARMOR_SLOT_COUNT;
+    private static final int HOTBAR_SLOT_START = FakePlayerInventoryView.HOTBAR_SLOT_START;
     private static final int HOTBAR_SLOT_END = HOTBAR_SLOT_START + FakePlayerInventoryView.HOTBAR_SLOT_COUNT;
-    private static final int MAIN_SLOT_START = HOTBAR_SLOT_END;
+    private static final int MAIN_SLOT_START = FakePlayerInventoryView.MAIN_SLOT_START;
     private static final int MAIN_SLOT_END = FAKE_SLOT_COUNT;
+    private static final int OFFHAND_SLOT_X = 80;
+    private static final int OFFHAND_SLOT_Y = 18;
+    private static final int BAUBLES_SLOT_X = 184;
+    private static final int BAUBLES_SLOT_Y = 18;
+    private static final int BAUBLES_SLOT_SPACING = 18;
+    private static final int BAUBLES_VISIBLE_ROWS = 8;
+    private static final int BAUBLES_MAX_COLUMNS = 4;
+    private static final int BAUBLES_HIDDEN_Y = -2000;
 
     private final EntityPlayer player;
     private final FakePlayer fakePlayer;
     private final FakePlayerInventoryView fakeInventory;
+    private final InventoryBaubles baublesInventory;
+    private final int baublesVisibleSlotCount;
+    private final int baublesColumns;
+    private final int baublesSlotStart;
+    private final int baublesSlotEnd;
+    private final int playerSlotStart;
+    private final int playerSlotEnd;
     private int selectedHotbarSlot;
 
     private FakePlayerInventoryContainer(EntityPlayer player, FakePlayer fakePlayer,
-        FakePlayerInventoryView fakeInventory) {
+        FakePlayerInventoryView fakeInventory, InventoryBaubles baublesInventory) {
         this.player = player;
         this.fakePlayer = fakePlayer;
         this.fakeInventory = fakeInventory;
+        this.baublesInventory = baublesInventory;
+        this.baublesVisibleSlotCount = resolveVisibleBaublesSlotCount(baublesInventory);
+        this.baublesColumns = this.baublesVisibleSlotCount <= 0 ? 1
+            : FakePlayerBaublesSlotLayout.resolveColumns(this.baublesVisibleSlotCount, BAUBLES_MAX_COLUMNS);
         this.selectedHotbarSlot = fakeInventory.getSelectedHotbarSlot();
+        if (this.baublesInventory != null) {
+            this.baublesInventory.setEventHandler(this);
+        }
         addFakeInventorySlots();
+        this.baublesSlotStart = this.inventorySlots.size();
+        addBaublesSlots();
+        this.baublesSlotEnd = this.inventorySlots.size();
+        this.playerSlotStart = this.inventorySlots.size();
         addPlayerInventorySlots(player);
+        this.playerSlotEnd = this.inventorySlots.size();
+        scrollBaublesTo(0F);
     }
 
     public static FakePlayerInventoryContainer server(EntityPlayerMP player, FakePlayer fakePlayer) {
-        return new FakePlayerInventoryContainer(player, fakePlayer, FakePlayerInventoryView.server(fakePlayer));
+        return new FakePlayerInventoryContainer(
+            player,
+            fakePlayer,
+            FakePlayerInventoryView.server(fakePlayer),
+            resolveBaublesInventory(fakePlayer));
     }
 
     public static FakePlayerInventoryContainer client(EntityPlayer player, FakePlayerInventoryView fakeInventory) {
-        return new FakePlayerInventoryContainer(player, null, fakeInventory);
+        return new FakePlayerInventoryContainer(player, null, fakeInventory, resolveClientBaublesInventory(player, null));
+    }
+
+    static FakePlayerInventoryContainer client(EntityPlayer player, FakePlayerInventoryView fakeInventory,
+        InventoryBaubles baublesInventory) {
+        return new FakePlayerInventoryContainer(
+            player,
+            null,
+            fakeInventory,
+            resolveClientBaublesInventory(player, baublesInventory));
+    }
+
+    static FakePlayerInventoryContainer forTest(EntityPlayer player, FakePlayer fakePlayer,
+        FakePlayerInventoryView fakeInventory, InventoryBaubles baublesInventory) {
+        return new FakePlayerInventoryContainer(player, fakePlayer, fakeInventory, baublesInventory);
     }
 
     public boolean isFakeInventorySlot(int slotIndex) {
         return slotIndex >= 0 && slotIndex < FAKE_SLOT_COUNT;
+    }
+
+    public boolean isBaublesSlot(int slotIndex) {
+        return slotIndex >= this.baublesSlotStart && slotIndex < this.baublesSlotEnd;
+    }
+
+    public boolean isOffhandSlot(int slotIndex) {
+        return slotIndex == FakePlayerInventoryView.OFFHAND_SLOT_INDEX;
+    }
+
+    public int getPlayerInventoryStartIndex() {
+        return this.playerSlotStart;
+    }
+
+    public int getBaublesVisibleSlotCount() {
+        return this.baublesVisibleSlotCount;
+    }
+
+    public int getBaublesColumns() {
+        return this.baublesColumns;
+    }
+
+    public int getBaublesHiddenRowCount() {
+        int totalRows = (this.baublesVisibleSlotCount + this.baublesColumns - 1) / this.baublesColumns;
+        return Math.max(0, totalRows - BAUBLES_VISIBLE_ROWS);
+    }
+
+    public boolean canScrollBaubles() {
+        return FakePlayerBaublesSlotLayout
+            .canScroll(this.baublesVisibleSlotCount, this.baublesColumns, BAUBLES_VISIBLE_ROWS);
+    }
+
+    public void scrollBaublesTo(float scrollOffset) {
+        if (this.baublesSlotStart >= this.baublesSlotEnd) {
+            return;
+        }
+
+        int rowOffset = FakePlayerBaublesSlotLayout.resolveRowOffset(
+            this.baublesVisibleSlotCount,
+            this.baublesColumns,
+            BAUBLES_VISIBLE_ROWS,
+            scrollOffset);
+
+        for (int visibleSlotIndex = 0; visibleSlotIndex < this.baublesSlotEnd - this.baublesSlotStart; visibleSlotIndex++) {
+            Slot slot = (Slot) this.inventorySlots.get(this.baublesSlotStart + visibleSlotIndex);
+            slot.xDisplayPosition = BAUBLES_SLOT_X + (visibleSlotIndex % this.baublesColumns) * BAUBLES_SLOT_SPACING;
+            slot.yDisplayPosition = FakePlayerBaublesSlotLayout.resolveDisplayY(
+                visibleSlotIndex,
+                this.baublesColumns,
+                rowOffset,
+                BAUBLES_SLOT_Y,
+                BAUBLES_SLOT_SPACING,
+                BAUBLES_HIDDEN_Y);
+        }
     }
 
     public int getSelectedHotbarSlot() {
@@ -75,7 +180,7 @@ public class FakePlayerInventoryContainer extends Container {
         if (slotId >= HOTBAR_SLOT_START && slotId < HOTBAR_SLOT_END) {
             setSelectedHotbarSlot(slotId - HOTBAR_SLOT_START);
         }
-        if (this.fakePlayer != null && isFakeInventorySlot(slotId)) {
+        if (this.fakePlayer != null && (isFakeInventorySlot(slotId) || isBaublesSlot(slotId))) {
             this.fakePlayer.syncEquipmentToWatchers();
         }
         return result;
@@ -92,8 +197,8 @@ public class FakePlayerInventoryContainer extends Container {
         ItemStack stackInSlot = slot.getStack();
         ItemStack originalStack = stackInSlot.copy();
 
-        if (isFakeInventorySlot(slotIndex)) {
-            if (!mergeItemStack(stackInSlot, PLAYER_SLOT_START, PLAYER_SLOT_END, false)) {
+        if (isFakeInventorySlot(slotIndex) || isBaublesSlot(slotIndex)) {
+            if (!mergeItemStack(stackInSlot, this.playerSlotStart, this.playerSlotEnd, false)) {
                 return null;
             }
         } else {
@@ -141,6 +246,12 @@ public class FakePlayerInventoryContainer extends Container {
         addSlotToContainer(new FakePlayerArmorSlot(this.fakeInventory, 1, 26, 18, 1));
         addSlotToContainer(new FakePlayerArmorSlot(this.fakeInventory, 2, 44, 18, 2));
         addSlotToContainer(new FakePlayerArmorSlot(this.fakeInventory, 3, 62, 18, 3));
+        addSlotToContainer(
+            new FakePlayerOffhandSlot(
+                this.fakeInventory,
+                FakePlayerInventoryView.OFFHAND_SLOT_INDEX,
+                OFFHAND_SLOT_X,
+                OFFHAND_SLOT_Y));
 
         for (int hotbarSlot = 0; hotbarSlot < FakePlayerInventoryView.HOTBAR_SLOT_COUNT; hotbarSlot++) {
             addSlotToContainer(new Slot(this.fakeInventory, HOTBAR_SLOT_START + hotbarSlot, 8 + hotbarSlot * 18, 36));
@@ -167,6 +278,27 @@ public class FakePlayerInventoryContainer extends Container {
         }
     }
 
+    private void addBaublesSlots() {
+        if (this.baublesInventory == null) {
+            return;
+        }
+
+        int visibleSlotIndex = 0;
+        for (int slotIndex = 0; slotIndex < this.baublesInventory.getSizeInventory(); slotIndex++) {
+            String slotType = BaubleExpandedSlots.getSlotType(slotIndex);
+            if (!shouldShowBaublesSlot(slotType)) {
+                continue;
+            }
+            addSlotToContainer(new SlotBauble(
+                this.baublesInventory,
+                slotType,
+                slotIndex,
+                BAUBLES_SLOT_X + (visibleSlotIndex % this.baublesColumns) * BAUBLES_SLOT_SPACING,
+                BAUBLES_SLOT_Y + (visibleSlotIndex / this.baublesColumns) * BAUBLES_SLOT_SPACING));
+            visibleSlotIndex++;
+        }
+    }
+
     private boolean mergeIntoFakeInventory(ItemStack stack) {
         if (stack != null && stack.getItem() instanceof ItemArmor armor) {
             int armorSlotIndex = armorContainerSlotForType(armor.armorType);
@@ -174,7 +306,28 @@ public class FakePlayerInventoryContainer extends Container {
                 return true;
             }
         }
+        if (mergeIntoBaublesInventory(stack)) {
+            return true;
+        }
+        if (mergeItemStack(
+            stack,
+            FakePlayerInventoryView.OFFHAND_SLOT_INDEX,
+            FakePlayerInventoryView.OFFHAND_SLOT_INDEX + 1,
+            false)) {
+            return true;
+        }
         return mergeItemStack(stack, HOTBAR_SLOT_START, MAIN_SLOT_END, false);
+    }
+
+    private boolean mergeIntoBaublesInventory(ItemStack stack) {
+        if (stack == null || this.baublesSlotStart >= this.baublesSlotEnd || !(stack.getItem() instanceof IBauble bauble)) {
+            return false;
+        }
+        EntityPlayer baublesWearer = this.fakePlayer != null ? this.fakePlayer : this.player;
+        if (!bauble.canEquip(stack, baublesWearer)) {
+            return false;
+        }
+        return mergeItemStack(stack, this.baublesSlotStart, this.baublesSlotEnd, false);
     }
 
     private void setSelectedHotbarSlot(int slot) {
@@ -205,5 +358,38 @@ public class FakePlayerInventoryContainer extends Container {
             return 0;
         }
         return Math.min(FakePlayerInventoryView.HOTBAR_SLOT_COUNT - 1, slot);
+    }
+
+    private static InventoryBaubles resolveBaublesInventory(EntityPlayer player) {
+        if (player == null || player.worldObj == null) {
+            return new InventoryBaubles(player);
+        }
+        InventoryBaubles baublesInventory = PlayerHandler.getPlayerBaubles(player);
+        return baublesInventory != null ? baublesInventory : new InventoryBaubles(player);
+    }
+
+    private static InventoryBaubles resolveClientBaublesInventory(EntityPlayer player, InventoryBaubles baublesInventory) {
+        if (baublesInventory != null) {
+            return baublesInventory;
+        }
+        return new InventoryBaubles(player);
+    }
+
+    private static boolean shouldShowBaublesSlot(String slotType) {
+        return BaublesConfig.showUnusedSlots || !BaubleExpandedSlots.unknownType.equals(slotType);
+    }
+
+    private static int resolveVisibleBaublesSlotCount(InventoryBaubles baublesInventory) {
+        if (baublesInventory == null) {
+            return 0;
+        }
+
+        int visibleSlotCount = 0;
+        for (int slotIndex = 0; slotIndex < baublesInventory.getSizeInventory(); slotIndex++) {
+            if (shouldShowBaublesSlot(BaubleExpandedSlots.getSlotType(slotIndex))) {
+                visibleSlotCount++;
+            }
+        }
+        return visibleSlotCount;
     }
 }
