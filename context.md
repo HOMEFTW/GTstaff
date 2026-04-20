@@ -5,7 +5,7 @@
 ## 基本信息
 - Mod Name: GTstaff
 - Mod ID: gtstaff
-- Version: v1.0.1
+- Version: v1.0.2
 - Root Package: `com.andgatech.gtstaff`
 - Target: MC 1.7.10 + Forge 10.13.4.1614 + GTNH
 - GitHub: https://github.com/HOMEFTW/GTstaff
@@ -156,9 +156,9 @@
 - 已通过 `./gradlew.bat --offline test` 作为当前分支的最终自动化 smoke test
 - 已通过 `./gradlew.bat --offline assemble` 产出客户端测试用 jar，产物位于 `build/libs/`
 - 已通过 `./gradlew.bat --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true assemble` 重新打包当前工作区产物
-- 当前最新 jar：`build/libs/gtstaff-v1.0.1.jar`
-- 当前最新 dev jar：`build/libs/gtstaff-v1.0.1-dev.jar`
-- 当前最新 sources jar：`build/libs/gtstaff-v1.0.1-sources.jar`
+- 当前最新 jar：`build/libs/gtstaff-v1.0.2.jar`
+- 当前最新 dev jar：`build/libs/gtstaff-v1.0.2-dev.jar`
+- 当前最新 sources jar：`build/libs/gtstaff-v1.0.2-sources.jar`
 - 最新重新打包 jar：`build/libs/gtstaff-b166ed7-master+b166ed77c1-dirty.jar`（含监控增强、颜色分配、中文翻译、提醒频率按钮）
 - 最新客户端测试主 jar：`build/libs/gtstaff-v0.1.1-master+1f334d4b20-dirty.jar`（含敌对生物驱逐器、其他功能页签）
 
