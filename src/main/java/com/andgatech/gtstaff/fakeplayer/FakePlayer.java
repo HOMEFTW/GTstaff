@@ -17,6 +17,7 @@ import net.minecraft.world.WorldSettings;
 
 import com.google.common.base.Charsets;
 import com.mojang.authlib.GameProfile;
+import com.andgatech.gtstaff.integration.BackhandCompat;
 
 public class FakePlayer extends EntityPlayerMP {
 
@@ -565,6 +566,7 @@ public class FakePlayer extends EntityPlayerMP {
                     .sendPacket(new S04PacketEntityEquipment(entityId, i + 1, this.inventory.armorInventory[i]));
             }
         }
+        BackhandCompat.syncOffhandToWatchers(this);
     }
 
     /**

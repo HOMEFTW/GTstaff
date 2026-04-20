@@ -13,13 +13,15 @@ import net.minecraft.item.ItemStack;
 import org.junit.jupiter.api.Test;
 
 import com.andgatech.gtstaff.fakeplayer.FakePlayer;
+import com.andgatech.gtstaff.integration.BackhandCompat;
 
 class FakePlayerInventoryViewTest {
 
     @Test
-    void mapsArmorHotbarAndMainInventoryIntoFixedContainerOrder() {
+    void mapsArmorOffhandHotbarAndMainInventoryIntoFixedContainerOrder() {
         StubFakePlayer fakePlayer = stubFakePlayer("UiBot");
         fakePlayer.inventory.armorInventory[3] = namedStack("Helmet", 1);
+        BackhandCompat.setOffhandItem(fakePlayer, namedStack("Torch", 16));
         fakePlayer.inventory.mainInventory[0] = namedStack("Sword", 1);
         fakePlayer.inventory.mainInventory[9] = namedStack("Pickaxe", 1);
         fakePlayer.inventory.currentItem = 4;
@@ -31,12 +33,16 @@ class FakePlayerInventoryViewTest {
             view.getStackInSlot(0)
                 .getDisplayName());
         assertEquals(
-            "Sword",
+            "Torch",
             view.getStackInSlot(4)
                 .getDisplayName());
         assertEquals(
+            "Sword",
+            view.getStackInSlot(5)
+                .getDisplayName());
+        assertEquals(
             "Pickaxe",
-            view.getStackInSlot(13)
+            view.getStackInSlot(14)
                 .getDisplayName());
         assertEquals(4, view.getSelectedHotbarSlot());
     }
@@ -47,10 +53,12 @@ class FakePlayerInventoryViewTest {
         FakePlayerInventoryView view = FakePlayerInventoryView.server(fakePlayer);
 
         view.setInventorySlotContents(1, namedStack("Chestplate", 1));
-        view.setInventorySlotContents(8, namedStack("Torch", 16));
-        view.setInventorySlotContents(20, namedStack("Wrench", 1));
+        view.setInventorySlotContents(4, namedStack("Shield", 1));
+        view.setInventorySlotContents(9, namedStack("Torch", 16));
+        view.setInventorySlotContents(21, namedStack("Wrench", 1));
 
         assertEquals("Chestplate", fakePlayer.inventory.armorInventory[2].getDisplayName());
+        assertEquals("Shield", BackhandCompat.getOffhandItem(fakePlayer).getDisplayName());
         assertEquals("Torch", fakePlayer.inventory.mainInventory[4].getDisplayName());
         assertEquals("Wrench", fakePlayer.inventory.mainInventory[16].getDisplayName());
     }
@@ -61,7 +69,7 @@ class FakePlayerInventoryViewTest {
         fakePlayer.inventory.mainInventory[0] = namedStack("Sword", 1);
         FakePlayerInventoryView view = FakePlayerInventoryView.server(fakePlayer);
 
-        ItemStack removed = view.decrStackSize(4, 1);
+        ItemStack removed = view.decrStackSize(5, 1);
 
         assertNotNull(removed);
         assertEquals("Sword", removed.getDisplayName());
@@ -71,7 +79,7 @@ class FakePlayerInventoryViewTest {
     private static StubFakePlayer stubFakePlayer(String name) {
         StubFakePlayer fakePlayer = allocate(StubFakePlayer.class);
         fakePlayer.name = name;
-        fakePlayer.inventory = new InventoryPlayer(fakePlayer);
+        fakePlayer.inventory = new TestInventoryPlayer(fakePlayer);
         return fakePlayer;
     }
 
@@ -103,6 +111,23 @@ class FakePlayerInventoryViewTest {
         @Override
         public String getCommandSenderName() {
             return this.name;
+        }
+    }
+
+    private static final class TestInventoryPlayer extends InventoryPlayer {
+
+        private ItemStack offhandItem;
+
+        private TestInventoryPlayer(StubFakePlayer player) {
+            super(player);
+        }
+
+        public ItemStack backhand$getOffhandItem() {
+            return this.offhandItem;
+        }
+
+        public void backhand$setOffhandItem(ItemStack stack) {
+            this.offhandItem = stack;
         }
     }
 }

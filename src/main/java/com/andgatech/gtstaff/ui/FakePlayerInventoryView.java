@@ -6,13 +6,17 @@ import net.minecraft.inventory.IInventory;
 import net.minecraft.item.ItemStack;
 
 import com.andgatech.gtstaff.fakeplayer.FakePlayer;
+import com.andgatech.gtstaff.integration.BackhandCompat;
 
 public final class FakePlayerInventoryView implements IInventory {
 
     public static final int ARMOR_SLOT_COUNT = 4;
+    public static final int OFFHAND_SLOT_INDEX = ARMOR_SLOT_COUNT;
+    public static final int HOTBAR_SLOT_START = OFFHAND_SLOT_INDEX + 1;
     public static final int HOTBAR_SLOT_COUNT = 9;
+    public static final int MAIN_SLOT_START = HOTBAR_SLOT_START + HOTBAR_SLOT_COUNT;
     public static final int MAIN_SLOT_COUNT = 27;
-    public static final int SLOT_COUNT = ARMOR_SLOT_COUNT + HOTBAR_SLOT_COUNT + MAIN_SLOT_COUNT;
+    public static final int SLOT_COUNT = MAIN_SLOT_START + MAIN_SLOT_COUNT;
 
     private final FakePlayer fakePlayer;
     private final ItemStack[] clientSlots;
@@ -163,10 +167,13 @@ public final class FakePlayerInventoryView implements IInventory {
         if (slot < ARMOR_SLOT_COUNT) {
             return inventory.armorInventory[3 - slot];
         }
-        if (slot < ARMOR_SLOT_COUNT + HOTBAR_SLOT_COUNT) {
-            return inventory.mainInventory[slot - ARMOR_SLOT_COUNT];
+        if (slot == OFFHAND_SLOT_INDEX) {
+            return BackhandCompat.getOffhandItem(this.fakePlayer);
         }
-        return inventory.mainInventory[slot - (ARMOR_SLOT_COUNT + HOTBAR_SLOT_COUNT) + 9];
+        if (slot < MAIN_SLOT_START) {
+            return inventory.mainInventory[slot - HOTBAR_SLOT_START];
+        }
+        return inventory.mainInventory[slot - MAIN_SLOT_START + 9];
     }
 
     private void setServerStack(int slot, ItemStack stack) {
@@ -178,11 +185,15 @@ public final class FakePlayerInventoryView implements IInventory {
             inventory.armorInventory[3 - slot] = stack;
             return;
         }
-        if (slot < ARMOR_SLOT_COUNT + HOTBAR_SLOT_COUNT) {
-            inventory.mainInventory[slot - ARMOR_SLOT_COUNT] = stack;
+        if (slot == OFFHAND_SLOT_INDEX) {
+            BackhandCompat.setOffhandItem(this.fakePlayer, stack);
             return;
         }
-        inventory.mainInventory[slot - (ARMOR_SLOT_COUNT + HOTBAR_SLOT_COUNT) + 9] = stack;
+        if (slot < MAIN_SLOT_START) {
+            inventory.mainInventory[slot - HOTBAR_SLOT_START] = stack;
+            return;
+        }
+        inventory.mainInventory[slot - MAIN_SLOT_START + 9] = stack;
     }
 
     private static int clampHotbarSlot(int slot) {

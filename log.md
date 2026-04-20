@@ -16,6 +16,22 @@
 
 ---
 
+## 2026-04-20：补充 GTstaff 假人 Baubles 统一背包实现计划
+
+### 已完成
+- 基于已确认的设计文档，新增实现计划 `docs/superpowers/plans/2026-04-20-gtstaff-fake-player-baubles-inventory.md`
+- 计划中明确拆分了依赖接入、动态饰品区布局计算、统一容器扩展、GUI handler 接线、GUI 滚动与最终验证五个任务
+- 结合 `InventoryBaubles`、`SlotBauble` 与 `PlayerHandler` 实现细节，收紧计划约束：客户端与服务端统一直接解析假人的 `InventoryBaubles`
+
+### 遇到的问题
+- **`SlotBauble` 依赖 `InventoryBaubles` 具体类型**：它会直接把传入库存强转为 `InventoryBaubles`，不能在计划里再假设“任意 `IInventory` 占位库存”可用
+
+### 做出的决定
+- 在实现计划里显式加入 `InventoryBaubles` 解析和容器 helper API，避免执行阶段再临时改接口
+- 本轮只完成计划与日志更新，不进入代码实现
+
+---
+
 ## 2026-04-19：重新打包当前 GTstaff jar
 
 ### 已完成
@@ -555,3 +571,81 @@
 ### 做出的决定
 - 保留 `SkinPort` 作为“可选在线 UUID 解析器”，但不再信任它返回的 filled profile 可直接用于客户端皮肤加载
 - 皮肤链路的成功标准从“有 `textures` 属性”提升为“有带签名的 `textures` 属性”，避免再次把客户端一定会拒绝的 unsigned profile 送进生成/恢复流程
+# 2026-04-20：GTstaff 假人统一背包接入 Baubles Expanded 设计
+
+### 已完成
+- 重新阅读 `GTstaff` 现有假人背包管理链路与 `Baubles-Expanded-master` 的 `BaublesApi`、`ContainerPlayerExpanded`、`SlotBauble` 相关实现
+- 与用户确认本次需求边界：`Baubles Expanded` 作为硬依赖、饰品栏并入现有统一背包容器、槽位数量与类型完全跟随当前配置
+- 新增设计文档 `docs/superpowers/specs/2026-04-20-gtstaff-fake-player-baubles-inventory-design.md`
+- 更新 `ToDOLIST.md`，把“为 GTstaff 假人统一背包接入 Baubles Expanded 饰品栏支持”登记为当前计划
+
+### 遇到的问题
+- **`ContainerPlayerExpanded` 默认以当前真人玩家为宿主**：其内部同时组合 crafting、玩家盔甲栏、玩家主背包和玩家自己的 baubles 库存，不适合直接复用为假人统一背包
+
+### 做出的决定
+- 采用“保留 GTstaff 现有打开链路，扩展 `FakePlayerInventoryContainer` / `FakePlayerInventoryGui`，底层直接接入假人的 Baubles 库存与槽位规则”的方案
+- 本轮先停在设计与规格确认，不提前进入实现阶段
+
+---
+## 2026-04-20：完成 Backhand 副手槽设计
+
+### 已完成
+- 阅读 `GTNH LIB/Backhand-master` 中的 `BackhandUtils`、`BackhandSlot`、`IOffhandInventory` 与 `MixinGuiInventory`
+- 确认 Backhand 的真实副手库存入口应通过 `BackhandUtils.getOffhandItem/setPlayerOffhandItem/getOffhandSlot` 访问，而不是把副手当作普通 `mainInventory` 槽位硬编码
+- 新增设计文档 `docs/superpowers/specs/2026-04-20-gtstaff-fake-player-backhand-offhand-design.md`
+
+### 遇到的问题
+- **副手不是普通背包尾部槽位**：Backhand 通过 `IOffhandInventory` mixin 扩展 `InventoryPlayer`，如果只在 GTstaff 容器里临时挂一个代理槽，后续客户端同步和 Shift 点击优先级会变得很脆弱
+
+### 做出的决定
+- 采用“正式扩展 `FakePlayerInventoryView` 槽位模型”的方案，把副手槽并入统一背包固定索引
+- 副手物品合法性直接复用 `BackhandSlot`，不在 GTstaff 内部重新实现黑名单逻辑
+- Shift 点击优先级固定为“护甲 > 副手 > 饰品 > 普通背包”
+
+---
+# 2026-04-20：完成 GTstaff 假人统一背包 Backhand 副手接入
+
+### 已完成
+- 在统一假人背包中加入真实副手槽：`FakePlayerInventoryView` 现为 41 槽布局，顺序为护甲 -> 副手 -> hotbar -> 主背包
+- 新增 `FakePlayerOffhandSlot` 与 `BackhandCompat`，让统一背包在运行时跟随 Backhand 当前副手黑名单，并读写假人的真实副手物品
+- 调整统一背包 Shift 点击优先级为护甲 -> 饰品 -> 副手 -> 主背包，避免 `IBauble` 物品被副手槽抢走
+- 在 `GTstaff` 的 `@Mod` 元数据中加入 `required-after:Baubles|Expanded` 与 `required-after:backhand`，把两者都声明为运行时必需依赖
+- 通过 `FakePlayerInventoryViewTest` 与 `FakePlayerInventoryContainerTest`，并使用 `./gradlew.bat --offline --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true build -x test` 重新打包 `build/libs/gtstaff-v1.0.1.jar`
+
+### 遇到的问题
+- **本地无法在线解析 `com.github.GTNewHorizons:Backhand` 运行时坐标**：离线缓存缺失时，`gtnhconvention` 在线拉取 manifest 又会失败，导致不能稳定依赖远程 Maven 坐标做本地验证
+
+### 做出的决定
+- 用 Forge `required-after:backhand` 保证游戏运行时硬依赖，再通过 `BackhandCompat` 反射桥接到 Backhand 当前库存扩展方法，避免本地构建被远程仓库状态卡死，同时保持游戏内行为跟随 Backhand 当前实现
+
+---
+# 2026-04-20：修复假人副手物品放入后客户端不显示
+
+### 已完成
+- 确认根因在于 `FakePlayer.syncEquipmentToWatchers()` 之前只同步原版主手/护甲，不会显式触发 Backhand 的副手同步包
+- 在 `BackhandCompat` 中新增副手同步桥 `syncOffhandToWatchers(...)`，运行时通过反射构造 `OffhandSyncItemPacket` 并调用 Backhand 的跟踪玩家同步入口
+- `FakePlayer.syncEquipmentToWatchers()` 现已在原版装备包之后补发一次副手同步，确保假人副手变化能及时同步到客户端显示
+- 新增回归测试 `FakePlayerBackhandSyncTest`，并通过 `FakePlayerBackhandSyncTest`、`FakePlayerInventoryViewTest`、`FakePlayerInventoryContainerTest`
+- 重新打包 `build/libs/gtstaff-v1.0.1.jar` 供客户端复测
+
+### 遇到的问题
+- **副手写入成功但显示链缺一段**：统一背包已经能把物品写入假人的真实副手库存，但 GTstaff 自己的装备同步方法只发原版 `S04PacketEntityEquipment`，客户端不会因此自动刷新 Backhand 副手
+
+### 做出的决定
+- 不依赖 Backhand 在常规 tick 中“顺带”检测到变化，而是在 GTstaff 的显式装备同步点补发一次 Backhand 副手同步，保证 UI 改动后的显示结果可预期
+
+---
+# 2026-04-20：准备发布 v1.0.2
+
+## 已完成
+- 将 `gradle.properties` 中的 `modVersion` 从 `v1.0.1` 更新为 `v1.0.2`
+- 同步更新项目上下文中的当前版本与预期产物文件名为 `gtstaff-v1.0.2*.jar`
+- 保持功能提交不变，单独准备后续合并到 `master`、推送 GitHub 与创建 `v1.0.2` release 的发布收尾
+
+## 遇到的问题
+- 当前功能工作树仍有用户自己的未提交改动 `src/main/resources/assets/gtstaff/lang/en_US.lang`，发布流程必须避免把它误并入 release 提交
+
+## 做出的决定
+- 采用“功能提交 + 版本发布准备提交”两段式提交，避免因为版本号变更去重写已完成的功能提交历史
+
+---

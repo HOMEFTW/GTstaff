@@ -3,9 +3,13 @@
 
 # TODO 列表
 
-
+## 当前计划
 
 ## 已完成
+- [x] 准备发布 v1.0.2：将项目版本号切到 `v1.0.2`，并为后续合并到 `master`、推送 GitHub 与上传 release 资产重新打包产物
+- [x] 修复 GTstaff 假人副手物品放入后客户端不显示的问题：假人装备同步现在会显式触发 Backhand 副手同步桥，确保假人副手变化及时同步到追踪玩家客户端
+- [x] 为 GTstaff 假人统一背包接入 Backhand 副手支持：在盔甲槽旁边增加真实副手槽，运行时通过 Forge `required-after:backhand` 强制依赖 Backhand，并跟随其副手黑名单规则；Shift 点击优先级为护甲 -> 饰品 -> 副手 -> 主背包
+- [x] 为 GTstaff 假人背包管理界面接入 Baubles Expanded 饰品栏支持：在现有统一背包容器中合并展示并编辑假人的饰品槽，槽位数量、类型与滚动布局跟随 Baubles Expanded 当前配置
 - [x] 发布 v1.0.1：更新项目版本号、重新打包新 jar，并将代码与 release 资产推送到 GitHub
 - [x] 修复假人仍回退默认皮的问题：`SkinPortCompat` 现在先解析在线 UUID，再走服务端 secure `fillProfileProperties(..., true)` 生成带签名 `textures`；同时补上无 `SkinPort` 时的服务端 profile cache/repository 回退与回归测试
 - [x] 使用 `./gradlew.bat --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true assemble` 打包当前 GTstaff jar
