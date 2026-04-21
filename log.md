@@ -1,4 +1,18 @@
 ﻿# 开发日志
+## 2026-04-22：发布 v1.1.0 到 GitHub
+
+### 已完成
+- 已将本地 master 推送到 origin/master
+- 已创建标签 v1.1.0 并推送到 GitHub
+- 已在 GitHub Release 发布 gtstaff-v1.1.0.jar、gtstaff-v1.1.0-dev.jar、gtstaff-v1.1.0-sources.jar
+- 发布地址：https://github.com/HOMEFTW/GTstaff/releases/tag/v1.1.0
+
+### 遇到的问题
+- 无
+
+### 做出的决定
+- 当前正式对外交付版本切换为 v1.1.0，后续修复默认基于该版本线继续推进
+
 ## 2026-04-22：合并 nextgen 分支并准备发布 v1.1.0
 
 ### 已完成

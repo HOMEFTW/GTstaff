@@ -4,6 +4,7 @@
 - [ ] 完成 `v1.1.0` 发布后的最终人工烟测：重点验证游戏内 `purge`、恢复后补皮重建、OpenBlocks/TST 联动与 mixed/legacy 回退
 
 ## 已完成
+- [x] 已将本轮 nextgen / 背包兼容 / UI / 联动修复合并覆盖到 `master`，推送 GitHub，并发布 `v1.1.0` Release：`https://github.com/HOMEFTW/GTstaff/releases/tag/v1.1.0`
 - [x] 将 nextgen runtime / 动作链 / 饰品栏与副手兼容 / TST 与 OpenBlocks 兼容 / 背包 UI 重构等本轮累计变更合并回 `master` 准备发布 `v1.1.0`
 - [x] 将项目版本号提升到 `v1.1.0` 并重新通过离线 `test assemble`，确认最新产物为 `gtstaff-v1.1.0.jar`、`gtstaff-v1.1.0-dev.jar`、`gtstaff-v1.1.0-sources.jar`
 - [x] 修复假人饰品栏“手动可放任意物品 + Shift-click 吞物品”问题：`FakePlayerExtraSlot` 现在会显式复用附加槽合法性校验，额外槽 Shift 合并也改为自定义受限逻辑，不再绕过 `isItemValid(...)`；已重新离线打包 `gtstaff-v1.0.2.jar` 到 2026-04-22 00:38

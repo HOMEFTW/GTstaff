@@ -7,6 +7,7 @@
 - Root Package: `com.andgatech.gtstaff`
 - Target: MC 1.7.10 + Forge 10.13.4.1614 + GTNH
 - GitHub: https://github.com/HOMEFTW/GTstaff
+- Latest Release: https://github.com/HOMEFTW/GTstaff/releases/tag/v1.1.0
 - 最新确认产物：`build/libs/gtstaff-v1.1.0.jar`、`build/libs/gtstaff-v1.1.0-dev.jar`、`build/libs/gtstaff-v1.1.0-sources.jar`（2026-04-22 离线 `test assemble` 成功，主 jar 时间已更新到 00:50）
 
 ### Mod 入口与代理
