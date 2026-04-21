@@ -1,9 +1,11 @@
 ﻿# TODO 列表
 
 ## 当前计划
-- [ ] 完成 nextgen 迁移最终人工烟测：重点验证游戏内 `purge`、恢复后补皮重建、OpenBlocks/TST 联动与 mixed/legacy 回退
+- [ ] 完成 `v1.1.0` 发布后的最终人工烟测：重点验证游戏内 `purge`、恢复后补皮重建、OpenBlocks/TST 联动与 mixed/legacy 回退
 
 ## 已完成
+- [x] 将 nextgen runtime / 动作链 / 饰品栏与副手兼容 / TST 与 OpenBlocks 兼容 / 背包 UI 重构等本轮累计变更合并回 `master` 准备发布 `v1.1.0`
+- [x] 将项目版本号提升到 `v1.1.0` 并重新通过离线 `test assemble`，确认最新产物为 `gtstaff-v1.1.0.jar`、`gtstaff-v1.1.0-dev.jar`、`gtstaff-v1.1.0-sources.jar`
 - [x] 修复假人饰品栏“手动可放任意物品 + Shift-click 吞物品”问题：`FakePlayerExtraSlot` 现在会显式复用附加槽合法性校验，额外槽 Shift 合并也改为自定义受限逻辑，不再绕过 `isItemValid(...)`；已重新离线打包 `gtstaff-v1.0.2.jar` 到 2026-04-22 00:38
 - [x] 修复假人饰品栏服务端写回绕过 Baubles 校验：额外槽现在会在服务端写透传前尊重底层 `IInventory.isItemValidForSlot(...)`，普通物品不会再被写进 Baubles 后端触发 `PacketSyncBauble` `ClassCastException`；并已重新离线打包 `gtstaff-v1.0.2.jar` 到 2026-04-22 00:24
 - [x] 为假人饰品栏补齐物品放置限制：客户端 Baubles 槽不再接受普通物品，只有实现 Bauble 接口且类型匹配当前 `slotType` 的饰品才允许放入

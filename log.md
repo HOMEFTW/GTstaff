@@ -1,4 +1,19 @@
 ﻿# 开发日志
+## 2026-04-22：合并 nextgen 分支并准备发布 v1.1.0
+
+### 已完成
+- 将当前 feature/nextgen-runtime-wave-a 上的 nextgen runtime、动作链分层、Baubles/Backhand 背包兼容、TST/OpenBlocks 联动、背包 UI 重构与相关测试改动提交并合并回本地 master
+- 先在功能分支上合并 origin/master，解决 v1.0.2 发布线与 nextgen 分支在背包/UI/文档上的分叉后，再将结果 fast-forward 到本地 master
+- 将 gradle.properties 中的 modVersion 提升到 v1.1.0
+- 重新离线执行 ./gradlew.bat --offline --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true test assemble
+- 确认最新产物已更新为 build/libs/gtstaff-v1.1.0.jar、build/libs/gtstaff-v1.1.0-dev.jar、build/libs/gtstaff-v1.1.0-sources.jar
+
+### 遇到的问题
+- 本地 master 停在早于 origin/master 的 nextgen design spec 节点，而当前 worktree 里的真实实现还没有提交成分支历史，必须先提交功能分支、再吸收远端 v1.0.2 发布线，才能安全回合并
+
+### 做出的决定
+- 以“先整理功能分支提交 -> 再合并 origin/master -> 最后 fast-forward 到本地 master”的方式完成收口，避免把未提交工作直接覆盖到旧的 master
+
 ## 2026-04-22：修复假人饰品栏手动放置与 Shift 吞物品问题
 
 ### 已完成
