@@ -9,6 +9,10 @@ import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.management.ServerConfigurationManager;
 
+import com.andgatech.gtstaff.fakeplayer.runtime.BotLifecycleManager;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotRuntimeView;
+import com.andgatech.gtstaff.integration.ServerUtilitiesCompat;
+
 import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
@@ -17,8 +21,9 @@ public final class FakePlayerRestoreScheduler {
 
     public static final FakePlayerRestoreScheduler INSTANCE = new FakePlayerRestoreScheduler();
 
-    private static Function<MinecraftServer, List<FakePlayer>> restoreAction = FakePlayerRegistry::restorePersisted;
-    private static BiConsumer<MinecraftServer, FakePlayer> skinScheduleAction = FakePlayerSkinRestoreScheduler::schedule;
+    private static Function<MinecraftServer, List<BotRuntimeView>> restoreAction = server -> FakePlayerRegistry
+        .restorePersistedRuntimes(data -> new BotLifecycleManager().restore(server, data));
+    private static BiConsumer<MinecraftServer, BotRuntimeView> skinScheduleAction = FakePlayerSkinRestoreScheduler::schedule;
     private static MinecraftServer pendingServer;
     private static boolean registered;
 
@@ -59,13 +64,13 @@ public final class FakePlayerRestoreScheduler {
         }
 
         pendingServer = null;
-        List<FakePlayer> restoredBots = restoreAction.apply(server);
+        List<BotRuntimeView> restoredBots = restoreAction.apply(server);
         if (restoredBots == null) {
             restoredBots = Collections.emptyList();
         }
-        for (FakePlayer fakePlayer : restoredBots) {
-            if (fakePlayer != null) {
-                skinScheduleAction.accept(server, fakePlayer);
+        for (BotRuntimeView runtime : restoredBots) {
+            if (runtime != null) {
+                skinScheduleAction.accept(server, runtime);
             }
         }
     }
@@ -85,24 +90,26 @@ public final class FakePlayerRestoreScheduler {
         }
 
         for (Object entry : configurationManager.playerEntityList) {
-            if (entry instanceof EntityPlayerMP && !(entry instanceof FakePlayer)) {
+            if (entry instanceof EntityPlayerMP player && !ServerUtilitiesCompat.isFakePlayer(player)) {
                 return true;
             }
         }
         return false;
     }
 
-    static void setRestoreActionForTesting(Function<MinecraftServer, List<FakePlayer>> action) {
-        restoreAction = action == null ? FakePlayerRegistry::restorePersisted : action;
+    static void setRestoreActionForTesting(Function<MinecraftServer, List<BotRuntimeView>> action) {
+        restoreAction = action == null ? server -> FakePlayerRegistry.restorePersistedRuntimes(
+            data -> new BotLifecycleManager().restore(server, data)) : action;
     }
 
-    static void setSkinScheduleActionForTesting(BiConsumer<MinecraftServer, FakePlayer> action) {
+    static void setSkinScheduleActionForTesting(BiConsumer<MinecraftServer, BotRuntimeView> action) {
         skinScheduleAction = action == null ? FakePlayerSkinRestoreScheduler::schedule : action;
     }
 
     static void resetForTesting() {
         pendingServer = null;
-        restoreAction = FakePlayerRegistry::restorePersisted;
+        restoreAction = server -> FakePlayerRegistry.restorePersistedRuntimes(data -> new BotLifecycleManager()
+            .restore(server, data));
         skinScheduleAction = FakePlayerSkinRestoreScheduler::schedule;
         registered = false;
     }

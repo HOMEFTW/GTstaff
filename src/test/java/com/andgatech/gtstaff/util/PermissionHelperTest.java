@@ -21,6 +21,14 @@ import org.junit.jupiter.api.Test;
 import com.andgatech.gtstaff.config.Config;
 import com.andgatech.gtstaff.fakeplayer.FakePlayer;
 import com.andgatech.gtstaff.fakeplayer.FakePlayerRegistry;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotActionRuntime;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotEntityBridge;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotFollowRuntime;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotInventoryRuntime;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotMonitorRuntime;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotRepelRuntime;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotRuntimeType;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotRuntimeView;
 import com.mojang.authlib.GameProfile;
 
 class PermissionHelperTest {
@@ -73,10 +81,37 @@ class PermissionHelperTest {
     }
 
     @Test
+    void ownerCanManipulateOwnRuntimeOnlyBotWhenPolicyAllowsIt() {
+        Config.allowNonOpControlOwnBot = true;
+
+        UUID owner = UUID.randomUUID();
+        TestFakePlayer sender = player(owner, false);
+
+        assertFalse(PermissionHelper.cantManipulate(sender, runtime(owner, "runtime-owner-bot")));
+    }
+
+    @Test
+    void nonOwnerCannotManipulateRuntimeOnlyBot() {
+        Config.allowNonOpControlOwnBot = true;
+
+        TestFakePlayer sender = player(UUID.randomUUID(), false);
+
+        assertTrue(PermissionHelper.cantManipulate(sender, runtime(UUID.randomUUID(), "runtime-foreign-bot")));
+    }
+
+    @Test
     void operatorCanRemoveAnyBot() {
         TestFakePlayer sender = player(UUID.randomUUID(), true);
 
         assertFalse(PermissionHelper.cantRemove(sender, bot(UUID.randomUUID(), "op-bot")));
+    }
+
+    @Test
+    void ownerCanRemoveOwnRuntimeOnlyBot() {
+        UUID owner = UUID.randomUUID();
+        TestFakePlayer sender = player(owner, false);
+
+        assertFalse(PermissionHelper.cantRemove(sender, runtime(owner, "runtime-remove-bot")));
     }
 
     @Test
@@ -115,6 +150,16 @@ class PermissionHelperTest {
                 .orElse(null));
     }
 
+    @Test
+    void cantSpawnRejectsRuntimeOnlyDuplicateNames() {
+        FakePlayerRegistry.registerRuntime(runtime(UUID.randomUUID(), "runtime-only-bot"));
+
+        assertEquals(
+            "Fake player already exists",
+            PermissionHelper.cantSpawn(consoleSender(), "runtime-only-bot", null)
+                .orElse(null));
+    }
+
     private static FakePlayer bot(UUID owner, String name) {
         FakePlayer bot = allocate(StubFakePlayer.class);
         ((StubFakePlayer) bot).name = name;
@@ -129,6 +174,66 @@ class PermissionHelperTest {
         player.uniqueId = uniqueId;
         player.op = op;
         return player;
+    }
+
+    private static BotRuntimeView runtime(UUID ownerUuid, String name) {
+        return new BotRuntimeView() {
+
+            @Override
+            public String name() {
+                return name;
+            }
+
+            @Override
+            public UUID ownerUUID() {
+                return ownerUuid;
+            }
+
+            @Override
+            public int dimension() {
+                return 0;
+            }
+
+            @Override
+            public BotRuntimeType runtimeType() {
+                return BotRuntimeType.NEXTGEN;
+            }
+
+            @Override
+            public BotEntityBridge entity() {
+                return () -> null;
+            }
+
+            @Override
+            public boolean online() {
+                return true;
+            }
+
+            @Override
+            public BotActionRuntime action() {
+                return null;
+            }
+
+            @Override
+            public BotFollowRuntime follow() {
+                return null;
+            }
+
+            @Override
+            public BotMonitorRuntime monitor() {
+                return null;
+            }
+
+            @Override
+            public BotRepelRuntime repel() {
+                return null;
+            }
+
+            @Override
+            public BotInventoryRuntime inventory() {
+                return null;
+            }
+        };
     }
 
     private static ICommandSender consoleSender() {

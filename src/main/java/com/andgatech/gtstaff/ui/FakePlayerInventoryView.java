@@ -1,40 +1,85 @@
 package com.andgatech.gtstaff.ui;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.InventoryPlayer;
 import net.minecraft.inventory.IInventory;
 import net.minecraft.item.ItemStack;
 
-import com.andgatech.gtstaff.fakeplayer.FakePlayer;
+import com.andgatech.gtstaff.integration.FakePlayerInventoryCompat;
 
 public final class FakePlayerInventoryView implements IInventory {
 
     public static final int ARMOR_SLOT_COUNT = 4;
     public static final int HOTBAR_SLOT_COUNT = 9;
     public static final int MAIN_SLOT_COUNT = 27;
-    public static final int SLOT_COUNT = ARMOR_SLOT_COUNT + HOTBAR_SLOT_COUNT + MAIN_SLOT_COUNT;
+    public static final int BASE_SLOT_COUNT = ARMOR_SLOT_COUNT + HOTBAR_SLOT_COUNT + MAIN_SLOT_COUNT;
+    public static final int SLOT_COUNT = BASE_SLOT_COUNT;
 
-    private final FakePlayer fakePlayer;
+    private final EntityPlayer fakePlayer;
     private final ItemStack[] clientSlots;
+    private final List<FakePlayerInventoryExtraSlot> extraSlots;
     private final String inventoryName;
     private int clientSelectedHotbarSlot;
 
-    private FakePlayerInventoryView(FakePlayer fakePlayer, String inventoryName) {
+    private FakePlayerInventoryView(EntityPlayer fakePlayer, String inventoryName,
+        List<FakePlayerInventoryExtraSlot> extraSlots) {
         this.fakePlayer = fakePlayer;
-        this.clientSlots = fakePlayer == null ? new ItemStack[SLOT_COUNT] : null;
+        this.extraSlots = Collections.unmodifiableList(new ArrayList<>(extraSlots));
+        this.clientSlots = fakePlayer == null ? new ItemStack[BASE_SLOT_COUNT] : null;
         this.inventoryName = inventoryName == null || inventoryName.trim()
             .isEmpty() ? "Fake Player" : inventoryName.trim();
     }
 
-    public static FakePlayerInventoryView server(FakePlayer fakePlayer) {
+    public static FakePlayerInventoryView server(EntityPlayer fakePlayer) {
         if (fakePlayer == null) {
             throw new IllegalArgumentException("fakePlayer");
         }
-        return new FakePlayerInventoryView(fakePlayer, fakePlayer.getCommandSenderName());
+        return new FakePlayerInventoryView(
+            fakePlayer,
+            fakePlayer.getCommandSenderName(),
+            FakePlayerInventoryCompat.serverSlots(fakePlayer));
+    }
+
+    static FakePlayerInventoryView server(EntityPlayer fakePlayer, List<FakePlayerInventoryExtraSlot> extraSlots) {
+        if (fakePlayer == null) {
+            throw new IllegalArgumentException("fakePlayer");
+        }
+        return new FakePlayerInventoryView(fakePlayer, fakePlayer.getCommandSenderName(), safeExtraSlots(extraSlots));
     }
 
     public static FakePlayerInventoryView client(String inventoryName) {
-        return new FakePlayerInventoryView(null, inventoryName);
+        return client(inventoryName, (EntityPlayer) null);
+    }
+
+    public static FakePlayerInventoryView client(String inventoryName, EntityPlayer fakePlayer) {
+        return new FakePlayerInventoryView(null, inventoryName, FakePlayerInventoryCompat.clientSlots(fakePlayer));
+    }
+
+    static FakePlayerInventoryView client(String inventoryName, List<FakePlayerInventoryExtraSlot> extraSlots) {
+        return new FakePlayerInventoryView(null, inventoryName, safeExtraSlots(extraSlots));
+    }
+
+    public boolean isExtraSlotOfKind(int slot, FakePlayerInventoryExtraSlot.Kind kind) {
+        FakePlayerInventoryExtraSlot extraSlot = getExtraSlot(slot);
+        return extraSlot != null && extraSlot.kind() == kind;
+    }
+
+    public String getExtraSlotBaublesType(int slot) {
+        FakePlayerInventoryExtraSlot extraSlot = getExtraSlot(slot);
+        return extraSlot == null ? "" : extraSlot.baublesSlotType();
+    }
+
+    public int getExtraSlotCount() {
+        return this.extraSlots.size();
+    }
+
+    public int getSlotStackLimit(int slot) {
+        FakePlayerInventoryExtraSlot extraSlot = getExtraSlot(slot);
+        return extraSlot == null ? getInventoryStackLimit() : extraSlot.getStackLimit();
     }
 
     public int getSelectedHotbarSlot() {
@@ -55,13 +100,17 @@ public final class FakePlayerInventoryView implements IInventory {
 
     @Override
     public int getSizeInventory() {
-        return SLOT_COUNT;
+        return BASE_SLOT_COUNT + this.extraSlots.size();
     }
 
     @Override
     public ItemStack getStackInSlot(int slot) {
         if (!isValidSlot(slot)) {
             return null;
+        }
+        FakePlayerInventoryExtraSlot extraSlot = getExtraSlot(slot);
+        if (extraSlot != null) {
+            return extraSlot.getStack();
         }
         if (this.fakePlayer != null) {
             return getServerStack(slot);
@@ -71,6 +120,16 @@ public final class FakePlayerInventoryView implements IInventory {
 
     @Override
     public ItemStack decrStackSize(int slot, int amount) {
+        FakePlayerInventoryExtraSlot extraSlot = getExtraSlot(slot);
+        if (extraSlot != null) {
+            ItemStack removed = extraSlot.decrStackSize(amount);
+            if (removed != null) {
+                extraSlot.markDirty();
+                markDirty();
+            }
+            return removed;
+        }
+
         ItemStack stack = getStackInSlot(slot);
         if (stack == null || amount <= 0) {
             return null;
@@ -94,6 +153,10 @@ public final class FakePlayerInventoryView implements IInventory {
 
     @Override
     public ItemStack getStackInSlotOnClosing(int slot) {
+        FakePlayerInventoryExtraSlot extraSlot = getExtraSlot(slot);
+        if (extraSlot != null) {
+            return extraSlot.getStackOnClosing();
+        }
         ItemStack stack = getStackInSlot(slot);
         if (stack != null) {
             setInventorySlotContents(slot, null);
@@ -104,6 +167,16 @@ public final class FakePlayerInventoryView implements IInventory {
     @Override
     public void setInventorySlotContents(int slot, ItemStack stack) {
         if (!isValidSlot(slot)) {
+            return;
+        }
+
+        FakePlayerInventoryExtraSlot extraSlot = getExtraSlot(slot);
+        if (extraSlot != null) {
+            if (stack != null && !extraSlot.isItemValid(stack)) {
+                return;
+            }
+            extraSlot.setStack(stack);
+            markDirty();
             return;
         }
 
@@ -141,6 +214,11 @@ public final class FakePlayerInventoryView implements IInventory {
 
     @Override
     public boolean isUseableByPlayer(EntityPlayer player) {
+        for (FakePlayerInventoryExtraSlot extraSlot : this.extraSlots) {
+            if (!extraSlot.isUseableByPlayer(player)) {
+                return false;
+            }
+        }
         return true;
     }
 
@@ -152,6 +230,10 @@ public final class FakePlayerInventoryView implements IInventory {
 
     @Override
     public boolean isItemValidForSlot(int slot, ItemStack stack) {
+        FakePlayerInventoryExtraSlot extraSlot = getExtraSlot(slot);
+        if (extraSlot != null) {
+            return extraSlot.isItemValid(stack);
+        }
         return isValidSlot(slot);
     }
 
@@ -185,6 +267,13 @@ public final class FakePlayerInventoryView implements IInventory {
         inventory.mainInventory[slot - (ARMOR_SLOT_COUNT + HOTBAR_SLOT_COUNT) + 9] = stack;
     }
 
+    private FakePlayerInventoryExtraSlot getExtraSlot(int slot) {
+        if (slot < BASE_SLOT_COUNT || slot >= getSizeInventory()) {
+            return null;
+        }
+        return this.extraSlots.get(slot - BASE_SLOT_COUNT);
+    }
+
     private static int clampHotbarSlot(int slot) {
         if (slot < 0) {
             return 0;
@@ -192,7 +281,11 @@ public final class FakePlayerInventoryView implements IInventory {
         return Math.min(HOTBAR_SLOT_COUNT - 1, slot);
     }
 
-    private static boolean isValidSlot(int slot) {
-        return slot >= 0 && slot < SLOT_COUNT;
+    private boolean isValidSlot(int slot) {
+        return slot >= 0 && slot < getSizeInventory();
+    }
+
+    private static List<FakePlayerInventoryExtraSlot> safeExtraSlots(List<FakePlayerInventoryExtraSlot> extraSlots) {
+        return extraSlots == null ? Collections.emptyList() : extraSlots;
     }
 }

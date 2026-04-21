@@ -6,8 +6,10 @@ import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.world.World;
 
-import com.andgatech.gtstaff.fakeplayer.FakePlayer;
 import com.andgatech.gtstaff.fakeplayer.FakePlayerRegistry;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotHandle;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotRuntimeView;
+import com.andgatech.gtstaff.integration.ServerUtilitiesCompat;
 
 import cpw.mods.fml.common.network.IGuiHandler;
 
@@ -23,7 +25,7 @@ public final class FakePlayerInventoryGuiHandler implements IGuiHandler {
             return null;
         }
 
-        FakePlayer fakePlayer = findServerFakePlayer(x);
+        EntityPlayerMP fakePlayer = findServerFakePlayer(x);
         if (fakePlayer == null) {
             return null;
         }
@@ -36,15 +38,39 @@ public final class FakePlayerInventoryGuiHandler implements IGuiHandler {
             return null;
         }
 
-        FakePlayerInventoryView fakeInventory = FakePlayerInventoryView.client(resolveInventoryName(world, x));
+        EntityPlayer fakePlayer = resolveClientFakePlayer(world, x);
+        FakePlayerInventoryView fakeInventory = FakePlayerInventoryView.client(resolveInventoryName(world, x), fakePlayer);
         FakePlayerInventoryContainer container = FakePlayerInventoryContainer.client(player, fakeInventory);
         return new FakePlayerInventoryGui(container, player.inventory.getInventoryName());
     }
 
-    private FakePlayer findServerFakePlayer(int entityId) {
-        for (FakePlayer fakePlayer : FakePlayerRegistry.getAll()
-            .values()) {
-            if (fakePlayer != null && fakePlayer.getEntityId() == entityId) {
+    private EntityPlayerMP findServerFakePlayer(int entityId) {
+        for (BotHandle handle : FakePlayerRegistry.getAllBotHandles()) {
+            if (!(handle instanceof BotRuntimeView runtime)) {
+                continue;
+            }
+            EntityPlayerMP fakePlayer = runtime.entity()
+                .asPlayer();
+            if (fakePlayer != null && fakePlayer.getEntityId() == entityId
+                && ServerUtilitiesCompat.isFakePlayer(fakePlayer)) {
+                return fakePlayer;
+            }
+        }
+        return null;
+    }
+
+    private EntityPlayer resolveClientFakePlayer(World world, int entityId) {
+        if (world != null) {
+            Entity entity = world.getEntityByID(entityId);
+            if (entity instanceof EntityPlayer fakePlayer) {
+                return fakePlayer;
+            }
+        }
+
+        World clientWorld = Minecraft.getMinecraft() == null ? null : Minecraft.getMinecraft().theWorld;
+        if (clientWorld != null) {
+            Entity entity = clientWorld.getEntityByID(entityId);
+            if (entity instanceof EntityPlayer fakePlayer) {
                 return fakePlayer;
             }
         }
@@ -52,9 +78,20 @@ public final class FakePlayerInventoryGuiHandler implements IGuiHandler {
     }
 
     private String resolveInventoryName(World world, int entityId) {
+        for (BotHandle handle : FakePlayerRegistry.getAllBotHandles()) {
+            if (!(handle instanceof BotRuntimeView runtime)) {
+                continue;
+            }
+            EntityPlayerMP fakePlayer = runtime.entity()
+                .asPlayer();
+            if (fakePlayer != null && fakePlayer.getEntityId() == entityId) {
+                return runtime.name();
+            }
+        }
+
         if (world != null) {
             Entity entity = world.getEntityByID(entityId);
-            if (entity instanceof FakePlayer fakePlayer) {
+            if (entity instanceof EntityPlayer fakePlayer) {
                 return fakePlayer.getCommandSenderName();
             }
         }
@@ -62,7 +99,7 @@ public final class FakePlayerInventoryGuiHandler implements IGuiHandler {
         World clientWorld = Minecraft.getMinecraft() == null ? null : Minecraft.getMinecraft().theWorld;
         if (clientWorld != null) {
             Entity entity = clientWorld.getEntityByID(entityId);
-            if (entity instanceof FakePlayer fakePlayer) {
+            if (entity instanceof EntityPlayer fakePlayer) {
                 return fakePlayer.getCommandSenderName();
             }
         }

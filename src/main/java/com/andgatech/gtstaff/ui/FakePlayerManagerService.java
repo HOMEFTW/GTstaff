@@ -19,6 +19,9 @@ import com.andgatech.gtstaff.command.CommandPlayer;
 import com.andgatech.gtstaff.fakeplayer.FakePlayer;
 import com.andgatech.gtstaff.fakeplayer.FakePlayerRegistry;
 import com.andgatech.gtstaff.fakeplayer.FollowService;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotHandle;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotInventorySummary;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotRuntimeView;
 import com.andgatech.gtstaff.util.PermissionHelper;
 
 public class FakePlayerManagerService {
@@ -334,36 +337,34 @@ public class FakePlayerManagerService {
 
     public String setReminderInterval(ICommandSender sender, String botName, int intervalTicks) {
         String normalizedBotName = requireBotName(botName);
-        FakePlayer fakePlayer = findBot(normalizedBotName);
-        if (fakePlayer == null) {
-            throw new CommandException(buildOfflineBotMessage(normalizedBotName));
-        }
-        fakePlayer.setReminderInterval(intervalTicks);
+        BotRuntimeView runtime = findRuntimeOrThrow(normalizedBotName);
+        ensureCanManageRuntime(sender, runtime, "control");
+        runtime.monitor()
+            .setReminderInterval(intervalTicks);
         int seconds = intervalTicks / 20;
         return "提醒频率已设置为 " + seconds + " 秒 for " + normalizedBotName + ".";
     }
 
     public String toggleMonsterRepel(ICommandSender sender, String botName, boolean enable) {
         String normalizedBotName = requireBotName(botName);
-        FakePlayer fakePlayer = findBot(normalizedBotName);
-        if (fakePlayer == null) {
-            throw new CommandException(buildOfflineBotMessage(normalizedBotName));
-        }
-        fakePlayer.setMonsterRepelling(enable);
+        BotRuntimeView runtime = findRuntimeOrThrow(normalizedBotName);
+        ensureCanManageRuntime(sender, runtime, "control");
+        runtime.repel()
+            .setRepelling(enable);
         return (enable ? "已开启敌对生物驱逐" : "已关闭敌对生物驱逐") + " for "
             + normalizedBotName
             + " (范围: "
-            + fakePlayer.getMonsterRepelRange()
+            + runtime.repel()
+                .repelRange()
             + "格)";
     }
 
     public String setMonsterRepelRange(ICommandSender sender, String botName, int range) {
         String normalizedBotName = requireBotName(botName);
-        FakePlayer fakePlayer = findBot(normalizedBotName);
-        if (fakePlayer == null) {
-            throw new CommandException(buildOfflineBotMessage(normalizedBotName));
-        }
-        fakePlayer.setMonsterRepelRange(range);
+        BotRuntimeView runtime = findRuntimeOrThrow(normalizedBotName);
+        ensureCanManageRuntime(sender, runtime, "control");
+        runtime.repel()
+            .setRepelRange(range);
         return "敌对生物驱逐范围已设置为 " + range + " 格 for " + normalizedBotName + ".";
     }
 
@@ -372,54 +373,50 @@ public class FakePlayerManagerService {
             throw new CommandException("Only players can be followed");
         }
         String normalizedBotName = requireBotName(botName);
-        FakePlayer fakePlayer = findBot(normalizedBotName);
-        if (fakePlayer == null) {
-            throw new CommandException(buildOfflineBotMessage(normalizedBotName));
-        }
-        fakePlayer.getFollowService()
+        BotRuntimeView runtime = findRuntimeOrThrow(normalizedBotName);
+        ensureCanManageRuntime(sender, runtime, "control");
+        runtime.follow()
             .startFollowing(player.getUniqueID());
         return FakePlayer.colorizeName(normalizedBotName) + " 开始跟随你";
     }
 
     public String stopFollow(ICommandSender sender, String botName) {
         String normalizedBotName = requireBotName(botName);
-        FakePlayer fakePlayer = findBot(normalizedBotName);
-        if (fakePlayer == null) {
-            throw new CommandException(buildOfflineBotMessage(normalizedBotName));
-        }
-        fakePlayer.getFollowService()
+        BotRuntimeView runtime = findRuntimeOrThrow(normalizedBotName);
+        ensureCanManageRuntime(sender, runtime, "control");
+        runtime.follow()
             .stop();
-        fakePlayer.moveForward = 0.0F;
-        fakePlayer.moveStrafing = 0.0F;
-        fakePlayer.setJumping(false);
+        EntityPlayerMP runtimePlayer = runtime.entity()
+            .asPlayer();
+        if (runtimePlayer != null) {
+            runtimePlayer.moveForward = 0.0F;
+            runtimePlayer.moveStrafing = 0.0F;
+            runtimePlayer.setJumping(false);
+        }
         return FakePlayer.colorizeName(normalizedBotName) + " 停止跟随";
     }
 
     public String setFollowRange(ICommandSender sender, String botName, int range) {
         String normalizedBotName = requireBotName(botName);
-        FakePlayer fakePlayer = findBot(normalizedBotName);
-        if (fakePlayer == null) {
-            throw new CommandException(buildOfflineBotMessage(normalizedBotName));
-        }
-        fakePlayer.getFollowService()
+        BotRuntimeView runtime = findRuntimeOrThrow(normalizedBotName);
+        ensureCanManageRuntime(sender, runtime, "control");
+        runtime.follow()
             .setFollowRange(range);
         return normalizedBotName + " 跟随距离设置为 " + range + " 格";
     }
 
     public String setTeleportRange(ICommandSender sender, String botName, int range) {
         String normalizedBotName = requireBotName(botName);
-        FakePlayer fakePlayer = findBot(normalizedBotName);
-        if (fakePlayer == null) {
-            throw new CommandException(buildOfflineBotMessage(normalizedBotName));
-        }
-        fakePlayer.getFollowService()
+        BotRuntimeView runtime = findRuntimeOrThrow(normalizedBotName);
+        ensureCanManageRuntime(sender, runtime, "control");
+        runtime.follow()
             .setTeleportRange(range);
         return normalizedBotName + " 传送距离设置为 " + range + " 格";
     }
 
     public String scanMachines(String botName) {
-        FakePlayer fakePlayer = findBot(botName);
-        if (fakePlayer == null) {
+        BotRuntimeView runtime = findRuntime(botName);
+        if (runtime == null) {
             return "假人 " + (botName == null ? "" : botName.trim()) + " 不在线。";
         }
         BotDetails details = describeBot(botName);
@@ -429,28 +426,29 @@ public class FakePlayerManagerService {
         builder.append("  范围: ")
             .append(details.monitorRange)
             .append('\n');
-        builder.append(
-            fakePlayer.getMachineMonitorService()
-                .buildOverviewMessage(botName));
+        builder.append(runtime.monitor().scanNow(runtime.name()));
         return builder.toString()
             .trim();
     }
 
     public String getInventorySummaryText(String botName) {
-        FakePlayer fakePlayer = findBot(botName);
-        if (fakePlayer == null) {
+        BotRuntimeView runtime = findRuntime(botName);
+        if (runtime == null) {
             return "假人 " + (botName == null ? "" : botName.trim()) + " 不在线。";
         }
-        InventoryDraft draft = new InventoryDraft();
-        draft.botName = botName;
-        return readInventory(draft).toCompactDisplayText();
+        BotInventorySummary summary = runtime.inventory().summary();
+        return new InventorySnapshot(
+            summary.botName(),
+            summary.selectedHotbarSlot(),
+            summary.hotbarLines(),
+            summary.mainInventoryLines(),
+            summary.armorLines()).toCompactDisplayText();
     }
 
     public List<String> listBotNames() {
-        return FakePlayerRegistry.getAll()
-            .values()
+        return FakePlayerRegistry.getAllBotHandles()
             .stream()
-            .map(FakePlayer::getCommandSenderName)
+            .map(BotHandle::name)
             .sorted(String.CASE_INSENSITIVE_ORDER)
             .collect(Collectors.toList());
     }
@@ -462,8 +460,8 @@ public class FakePlayerManagerService {
     }
 
     public BotDetails describeBot(String botName) {
-        FakePlayer fakePlayer = findBot(botName);
-        if (fakePlayer == null) {
+        BotRuntimeView runtime = findRuntime(botName);
+        if (runtime == null) {
             return new BotDetails(
                 botName == null ? "" : botName.trim(),
                 "(offline)",
@@ -482,25 +480,25 @@ public class FakePlayerManagerService {
                 FollowService.DEFAULT_FOLLOW_RANGE,
                 FollowService.DEFAULT_TELEPORT_RANGE);
         }
-        boolean following = fakePlayer.isFollowing();
-        int followRange = fakePlayer.getFollowService() != null ? fakePlayer.getFollowService()
-            .getFollowRange() : FollowService.DEFAULT_FOLLOW_RANGE;
-        int teleportRange = fakePlayer.getFollowService() != null ? fakePlayer.getFollowService()
-            .getTeleportRange() : FollowService.DEFAULT_TELEPORT_RANGE;
+        EntityPlayerMP player = runtime.entity()
+            .asPlayer();
+        boolean following = runtime.follow().following();
+        int followRange = runtime.follow().followRange();
+        int teleportRange = runtime.follow().teleportRange();
         return new BotDetails(
-            fakePlayer.getCommandSenderName(),
-            formatOwnerLabel(fakePlayer.getOwnerUUID()),
-            MathHelper.floor_double(fakePlayer.posX),
-            MathHelper.floor_double(fakePlayer.posY),
-            MathHelper.floor_double(fakePlayer.posZ),
-            fakePlayer.dimension,
-            fakePlayer.inventory == null ? 0 : MathHelper.clamp_int(fakePlayer.inventory.currentItem, 0, 8),
-            fakePlayer.isMonitoring(),
-            fakePlayer.getMonitorRange(),
-            fakePlayer.getReminderInterval(),
-            true,
-            fakePlayer.isMonsterRepelling(),
-            fakePlayer.getMonsterRepelRange(),
+            runtime.name(),
+            formatOwnerLabel(runtime.ownerUUID()),
+            player == null ? 0 : MathHelper.floor_double(player.posX),
+            player == null ? 0 : MathHelper.floor_double(player.posY),
+            player == null ? 0 : MathHelper.floor_double(player.posZ),
+            runtime.dimension(),
+            runtime.inventory().selectedHotbarSlot(),
+            runtime.monitor().monitoring(),
+            runtime.monitor().monitorRange(),
+            runtime.monitor().reminderInterval(),
+            runtime.online(),
+            runtime.repel().repelling(),
+            runtime.repel().repelRange(),
             following,
             followRange,
             teleportRange);
@@ -511,19 +509,9 @@ public class FakePlayerManagerService {
             throw new CommandException("Inventory manager can only be opened by a player");
         }
 
-        FakePlayer fakePlayer = findBotOrThrow(botName);
-        if (PermissionHelper.cantManipulate(player, fakePlayer)) {
-            throw new CommandException("You do not have permission to manage " + fakePlayer.getCommandSenderName());
-        }
-
-        player.openGui(
-            GTstaff.instance,
-            FakePlayerInventoryGuiIds.FAKE_PLAYER_INVENTORY,
-            player.worldObj,
-            fakePlayer.getEntityId(),
-            0,
-            0);
-        return "Opening inventory manager for " + fakePlayer.getCommandSenderName() + ".";
+        BotRuntimeView runtime = findRuntimeOrThrow(botName);
+        ensureCanManageRuntime(player, runtime, "manage");
+        return runtime.inventory().openInventoryManager(player);
     }
 
     public InventoryDraft createInventoryDraft(EntityPlayer player) {
@@ -538,40 +526,14 @@ public class FakePlayerManagerService {
         }
 
         String botName = requireBotName(draft.botName);
-        FakePlayer fakePlayer = FakePlayerRegistry.getFakePlayer(botName);
-        if (fakePlayer == null) {
-            throw new CommandException(buildOfflineBotMessage(botName));
-        }
-
-        InventoryPlayer inventory = fakePlayer.inventory;
-        List<String> hotbarLines = new ArrayList<String>();
-        List<String> mainInventoryLines = new ArrayList<String>();
-        List<String> armorLines = new ArrayList<String>();
-        int selectedHotbarSlot = inventory == null ? 0 : MathHelper.clamp_int(inventory.currentItem, 0, 8);
-
-        if (inventory != null) {
-            for (int index = 0; index < 9; index++) {
-                hotbarLines
-                    .add(formatInventorySlot(index, inventory.mainInventory[index], index == selectedHotbarSlot));
-            }
-
-            for (int index = 9; index < inventory.mainInventory.length; index++) {
-                mainInventoryLines.add(formatInventorySlot(index, inventory.mainInventory[index], false));
-            }
-
-            armorLines.add(
-                formatArmorSlot("Helmet", inventory.armorInventory.length > 3 ? inventory.armorInventory[3] : null));
-            armorLines.add(
-                formatArmorSlot(
-                    "Chestplate",
-                    inventory.armorInventory.length > 2 ? inventory.armorInventory[2] : null));
-            armorLines.add(
-                formatArmorSlot("Leggings", inventory.armorInventory.length > 1 ? inventory.armorInventory[1] : null));
-            armorLines.add(
-                formatArmorSlot("Boots", inventory.armorInventory.length > 0 ? inventory.armorInventory[0] : null));
-        }
-
-        return new InventorySnapshot(botName, selectedHotbarSlot, hotbarLines, mainInventoryLines, armorLines);
+        BotRuntimeView runtime = findRuntimeOrThrow(botName);
+        BotInventorySummary summary = runtime.inventory().summary();
+        return new InventorySnapshot(
+            summary.botName(),
+            summary.selectedHotbarSlot(),
+            summary.hotbarLines(),
+            summary.mainInventoryLines(),
+            summary.armorLines());
     }
 
     public static String normalizeGameMode(String input) {
@@ -679,10 +641,9 @@ public class FakePlayerManagerService {
 
     private String suggestBotName() {
         if (FakePlayerRegistry.getCount() == 1) {
-            return FakePlayerRegistry.getAll()
-                .values()
+            return FakePlayerRegistry.getAllBotHandles()
                 .stream()
-                .map(FakePlayer::getCommandSenderName)
+                .map(BotHandle::name)
                 .findFirst()
                 .orElse("");
         }
@@ -697,24 +658,31 @@ public class FakePlayerManagerService {
         return "Fake player " + botName + " is not online. Online bots: " + String.join(", ", onlineBots);
     }
 
-    private FakePlayer findBot(String botName) {
+    private BotRuntimeView findRuntime(String botName) {
         String normalizedBotName = botName == null ? "" : botName.trim();
         if (normalizedBotName.isEmpty()) {
             return null;
         }
-        return FakePlayerRegistry.getFakePlayer(normalizedBotName);
+        BotRuntimeView runtime = FakePlayerRegistry.getRuntimeView(normalizedBotName);
+        return runtime != null && runtime.online() ? runtime : null;
     }
 
-    private FakePlayer findBotOrThrow(String botName) {
+    private BotRuntimeView findRuntimeOrThrow(String botName) {
         String normalizedBotName = requireBotName(botName);
-        FakePlayer fakePlayer = FakePlayerRegistry.getFakePlayer(normalizedBotName);
-        if (fakePlayer == null) {
+        BotRuntimeView runtime = findRuntime(normalizedBotName);
+        if (runtime == null) {
             throw new CommandException(buildOfflineBotMessage(normalizedBotName));
         }
-        return fakePlayer;
+        return runtime;
     }
 
     private String formatOwnerLabel(UUID ownerUUID) {
         return ownerUUID == null ? "(server)" : ownerUUID.toString();
+    }
+
+    private void ensureCanManageRuntime(ICommandSender sender, BotRuntimeView runtime, String verb) {
+        if (PermissionHelper.cantManipulate(sender, runtime)) {
+            throw new CommandException("You do not have permission to " + verb + " " + runtime.name());
+        }
     }
 }

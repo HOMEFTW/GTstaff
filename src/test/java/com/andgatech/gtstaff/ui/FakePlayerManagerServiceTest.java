@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.UUID;
 
 import net.minecraft.command.CommandException;
@@ -25,6 +26,15 @@ import com.andgatech.gtstaff.config.Config;
 import com.andgatech.gtstaff.fakeplayer.FakePlayer;
 import com.andgatech.gtstaff.fakeplayer.FakePlayerRegistry;
 import com.andgatech.gtstaff.fakeplayer.MachineMonitorService;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotActionRuntime;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotEntityBridge;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotFollowRuntime;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotInventoryRuntime;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotInventorySummary;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotMonitorRuntime;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotRepelRuntime;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotRuntimeType;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotRuntimeView;
 
 class FakePlayerManagerServiceTest {
 
@@ -211,6 +221,30 @@ class FakePlayerManagerServiceTest {
     }
 
     @Test
+    void readInventoryBuildsSnapshotFromRegisteredRuntimeHandle() {
+        FakePlayerManagerService service = new FakePlayerManagerService();
+        FakePlayerRegistry.registerRuntime(
+            stubRuntime(
+                "RuntimeBot",
+                new BotInventorySummary(
+                    "RuntimeBot",
+                    1,
+                    Collections.singletonList("[*] 2: Torch x16"),
+                    Collections.singletonList("[ ] 10: Wrench x1"),
+                    Collections.singletonList("Helmet: Nano Helmet x1"))));
+        FakePlayerManagerService.InventoryDraft draft = new FakePlayerManagerService.InventoryDraft();
+        draft.botName = "RuntimeBot";
+
+        FakePlayerManagerService.InventorySnapshot snapshot = service.readInventory(draft);
+
+        assertEquals("RuntimeBot", snapshot.botName);
+        assertEquals(1, snapshot.selectedHotbarSlot);
+        assertTrue(snapshot.hotbarLines.contains("[*] 2: Torch x16"));
+        assertTrue(snapshot.mainInventoryLines.contains("[ ] 10: Wrench x1"));
+        assertTrue(snapshot.armorLines.contains("Helmet: Nano Helmet x1"));
+    }
+
+    @Test
     void listBotNamesReturnsCaseInsensitiveSortedNames() {
         FakePlayerManagerService service = new FakePlayerManagerService();
         FakePlayerRegistry.register(stubFakePlayer("beta"), null);
@@ -218,6 +252,15 @@ class FakePlayerManagerServiceTest {
         FakePlayerRegistry.register(stubFakePlayer("gamma"), null);
 
         assertEquals(Arrays.asList("Alpha", "beta", "gamma"), service.listBotNames());
+    }
+
+    @Test
+    void listBotNamesIncludesRegisteredRuntimeHandles() {
+        FakePlayerManagerService service = new FakePlayerManagerService();
+        FakePlayerRegistry.registerRuntime(stubRuntime("omega"));
+        FakePlayerRegistry.registerRuntime(stubRuntime("Alpha"));
+
+        assertEquals(Arrays.asList("Alpha", "omega"), service.listBotNames());
     }
 
     @Test
@@ -259,6 +302,25 @@ class FakePlayerManagerServiceTest {
             StubFakePlayer fakePlayer = stubFakePlayer("UiBot");
             fakePlayer.setOwnerUUID(UUID.randomUUID());
             FakePlayerRegistry.register(fakePlayer, null);
+            RecordingPlayer player = stubPlayer(UUID.randomUUID(), false);
+
+            CommandException exception = assertThrows(
+                CommandException.class,
+                () -> service.openInventoryManager(player, "UiBot"));
+
+            assertEquals("You do not have permission to manage UiBot", exception.getMessage());
+        } finally {
+            Config.allowNonOpControlOwnBot = originalAllowNonOpControlOwnBot;
+        }
+    }
+
+    @Test
+    void openInventoryManagerRejectsUnauthorizedRuntimeOnlyPlayer() {
+        boolean originalAllowNonOpControlOwnBot = Config.allowNonOpControlOwnBot;
+        try {
+            Config.allowNonOpControlOwnBot = true;
+            FakePlayerManagerService service = new FakePlayerManagerService();
+            FakePlayerRegistry.registerRuntime(stubRuntime("UiBot", UUID.randomUUID()));
             RecordingPlayer player = stubPlayer(UUID.randomUUID(), false);
 
             CommandException exception = assertThrows(
@@ -321,6 +383,38 @@ class FakePlayerManagerServiceTest {
         player.inventory = new InventoryPlayer(player);
         setField(EntityPlayerMP.class, player, "theItemInWorldManager", allocate(StubItemInWorldManager.class));
         return player;
+    }
+
+    private static BotRuntimeView stubRuntime(String name) {
+        return stubRuntime(
+            name,
+            null,
+            new BotInventorySummary(
+                name,
+                0,
+                Collections.<String>emptyList(),
+                Collections.<String>emptyList(),
+                Collections.<String>emptyList()));
+    }
+
+    private static BotRuntimeView stubRuntime(String name, UUID ownerUuid) {
+        return stubRuntime(
+            name,
+            ownerUuid,
+            new BotInventorySummary(
+                name,
+                0,
+                Collections.<String>emptyList(),
+                Collections.<String>emptyList(),
+                Collections.<String>emptyList()));
+    }
+
+    private static BotRuntimeView stubRuntime(String name, BotInventorySummary summary) {
+        return stubRuntime(name, null, summary);
+    }
+
+    private static BotRuntimeView stubRuntime(String name, UUID ownerUuid, BotInventorySummary summary) {
+        return new StubRuntimeView(name, summary, ownerUuid);
     }
 
     private static ItemStack namedStack(String displayName, int stackSize) {
@@ -506,6 +600,90 @@ class FakePlayerManagerServiceTest {
         @Override
         public void run(ICommandSender sender, String[] args) {
             this.lastArgs = args;
+        }
+    }
+
+    private static final class StubRuntimeView implements BotRuntimeView {
+
+        private final String name;
+        private final BotInventorySummary summary;
+        private final UUID ownerUuid;
+
+        private StubRuntimeView(String name, BotInventorySummary summary, UUID ownerUuid) {
+            this.name = name;
+            this.summary = summary;
+            this.ownerUuid = ownerUuid;
+        }
+
+        @Override
+        public String name() {
+            return this.name;
+        }
+
+        @Override
+        public UUID ownerUUID() {
+            return ownerUuid;
+        }
+
+        @Override
+        public int dimension() {
+            return 0;
+        }
+
+        @Override
+        public BotRuntimeType runtimeType() {
+            return BotRuntimeType.NEXTGEN;
+        }
+
+        @Override
+        public BotEntityBridge entity() {
+            return () -> null;
+        }
+
+        @Override
+        public boolean online() {
+            return true;
+        }
+
+        @Override
+        public BotActionRuntime action() {
+            return null;
+        }
+
+        @Override
+        public BotFollowRuntime follow() {
+            return null;
+        }
+
+        @Override
+        public BotMonitorRuntime monitor() {
+            return null;
+        }
+
+        @Override
+        public BotRepelRuntime repel() {
+            return null;
+        }
+
+        @Override
+        public BotInventoryRuntime inventory() {
+            return new BotInventoryRuntime() {
+
+                @Override
+                public int selectedHotbarSlot() {
+                    return summary.selectedHotbarSlot();
+                }
+
+                @Override
+                public BotInventorySummary summary() {
+                    return summary;
+                }
+
+                @Override
+                public String openInventoryManager(EntityPlayerMP player) {
+                    return "Opening inventory manager for " + name + ".";
+                }
+            };
         }
     }
 

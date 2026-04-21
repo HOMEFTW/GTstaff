@@ -16,7 +16,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.util.MovingObjectPosition;
 import net.minecraft.util.Vec3;
 
-import com.andgatech.gtstaff.fakeplayer.FakePlayer;
+import com.andgatech.gtstaff.fakeplayer.PlayerVisualSync;
 
 public final class FakePlayerClientUseCompat {
 
@@ -380,8 +380,8 @@ public final class FakePlayerClientUseCompat {
             boolean used = tryServerBlink(player);
             if (used) {
                 player.swingItem();
-                if (player instanceof FakePlayer fakePlayer) {
-                    fakePlayer.broadcastSwingAnimation();
+                if (player instanceof PlayerVisualSync visualSync) {
+                    visualSync.broadcastSwingAnimation();
                 }
             }
             return used;

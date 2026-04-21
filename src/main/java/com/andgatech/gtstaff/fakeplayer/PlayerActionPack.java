@@ -11,13 +11,18 @@ import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.entity.SharedMonsterAttributes;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.item.ItemStack;
-import net.minecraft.util.AxisAlignedBB;
 import net.minecraft.util.ChunkCoordinates;
 import net.minecraft.util.DamageSource;
 import net.minecraft.util.MathHelper;
 import net.minecraft.util.MovingObjectPosition;
-import net.minecraft.util.Vec3;
 
+import com.andgatech.gtstaff.fakeplayer.action.ActionDiagnostics;
+import com.andgatech.gtstaff.fakeplayer.action.AttackExecutor;
+import com.andgatech.gtstaff.fakeplayer.action.AttackResult;
+import com.andgatech.gtstaff.fakeplayer.action.FeedbackSync;
+import com.andgatech.gtstaff.fakeplayer.action.TargetingService;
+import com.andgatech.gtstaff.fakeplayer.action.UseExecutor;
+import com.andgatech.gtstaff.fakeplayer.action.UseResult;
 import com.andgatech.gtstaff.integration.FakePlayerClientUseCompat;
 import com.andgatech.gtstaff.integration.FakePlayerMovementCompat;
 
@@ -46,6 +51,10 @@ public class PlayerActionPack {
     }
 
     public void onUpdate() {
+        if (itemUseCooldown > 0) {
+            itemUseCooldown--;
+        }
+
         Iterator<Map.Entry<ActionType, Action>> iterator = actions.entrySet()
             .iterator();
         while (iterator.hasNext()) {
@@ -119,7 +128,7 @@ public class PlayerActionPack {
 
     public void setSlot(int slot) {
         player.inventory.currentItem = MathHelper.clamp_int(slot, 1, 9) - 1;
-        if (player instanceof FakePlayer fake) fake.syncEquipmentToWatchers();
+        syncEquipmentToWatchers();
     }
 
     public void setForward(float value) {
@@ -150,112 +159,46 @@ public class PlayerActionPack {
 
     @SuppressWarnings("unchecked")
     protected MovingObjectPosition getTarget() {
-        double reach = isCreativeMode() ? 5.0D : 4.5D;
+        return new TargetingService(player).resolve().hit();
+    }
 
-        Vec3 eyePos = Vec3.createVectorHelper(player.posX, player.posY + player.getEyeHeight(), player.posZ);
-        Vec3 lookVec = player.getLookVec();
-        Vec3 endPos = eyePos.addVector(lookVec.xCoord * reach, lookVec.yCoord * reach, lookVec.zCoord * reach);
-
-        MovingObjectPosition blockHit = player.worldObj.func_147447_a(eyePos, endPos, false, false, true);
-
-        double blockDist = blockHit != null ? eyePos.distanceTo(blockHit.hitVec) : Double.MAX_VALUE;
-
-        Entity closestEntity = null;
-        Vec3 closestEntityHit = null;
-        double closestEntityDist = blockDist;
-
-        List<Entity> entities = player.worldObj
-            .getEntitiesWithinAABBExcludingEntity(
-                player,
-                player.boundingBox.addCoord(lookVec.xCoord * reach, lookVec.yCoord * reach, lookVec.zCoord * reach)
-                    .expand(1.0D, 1.0D, 1.0D));
-        for (Entity entity : entities) {
-            if (!entity.canBeCollidedWith()) {
-                continue;
-            }
-            float border = entity.getCollisionBorderSize();
-            AxisAlignedBB expandedBB = entity.boundingBox.expand(border, border, border);
-            MovingObjectPosition intercept = expandedBB.calculateIntercept(eyePos, endPos);
-
-            if (expandedBB.isVecInside(eyePos)) {
-                if (0.0D <= closestEntityDist) {
-                    closestEntityDist = 0.0D;
-                    closestEntityHit = intercept == null ? eyePos : intercept.hitVec;
-                    closestEntity = entity;
-                }
-                continue;
-            }
-
-            if (intercept != null) {
-                double dist = eyePos.distanceTo(intercept.hitVec);
-                if (dist < closestEntityDist || closestEntityDist == 0.0D) {
-                    if (entity == player.ridingEntity && !entity.canRiderInteract()) {
-                        if (closestEntityDist == 0.0D) {
-                            closestEntityHit = intercept.hitVec;
-                            closestEntity = entity;
-                        }
-                    } else {
-                        closestEntityDist = dist;
-                        closestEntityHit = intercept.hitVec;
-                        closestEntity = entity;
-                    }
-                }
-            }
-        }
-
-        if (closestEntity != null && (closestEntityDist < blockDist || blockHit == null)) {
-            return new MovingObjectPosition(closestEntity, closestEntityHit);
-        }
-
-        return blockHit;
+    protected MovingObjectPosition getAttackTarget() {
+        return new TargetingService(player).resolveForAttack().hit();
     }
 
     protected boolean performUse(MovingObjectPosition target) {
-        if (player.theItemInWorldManager == null || player.worldObj == null) {
-            return false;
-        }
+        UseResult result = new UseExecutor(player, new FeedbackSync(player) {
 
-        if (itemUseCooldown > 0) {
-            itemUseCooldown--;
-            return true;
-        }
+            @Override
+            public void swing() {
+                performSwingAnimation();
+            }
+        }) {
 
-        if (player.isUsingItem()) {
-            return true;
-        }
-
-        ItemStack held = player.getCurrentEquippedItem();
-        boolean blockUsed = false;
-        boolean itemUsed = false;
-
-        if (target != null && target.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK) {
-            float hitX = 0.5F;
-            float hitY = 0.5F;
-            float hitZ = 0.5F;
-            Vec3 hitVec = target.hitVec;
-
-            if (hitVec != null) {
-                hitX = (float) (hitVec.xCoord - target.blockX);
-                hitY = (float) (hitVec.yCoord - target.blockY);
-                hitZ = (float) (hitVec.zCoord - target.blockZ);
+            @Override
+            protected boolean performBlockActivationUse(MovingObjectPosition target, ItemStack held, float hitX,
+                float hitY, float hitZ) {
+                return PlayerActionPack.this.performBlockActivationUse(target, held, hitX, hitY, hitZ);
             }
 
-            blockUsed = performBlockActivationUse(target, held, hitX, hitY, hitZ);
-        }
+            @Override
+            protected boolean performDirectItemUse(ItemStack held) {
+                return PlayerActionPack.this.performDirectItemUse(held);
+            }
 
-        if (!blockUsed && held != null) {
-            itemUsed = performDirectItemUse(held);
-        }
+            @Override
+            protected boolean performClientUseBridge(MovingObjectPosition target, ItemStack held, boolean blockUsed,
+                boolean itemUsed) {
+                return PlayerActionPack.this.performClientUseBridge(target, held, blockUsed, itemUsed);
+            }
+        }.execute(target, itemUseCooldown);
 
-        boolean bridgeUsed = performClientUseBridge(target, held, blockUsed, itemUsed);
-        if (blockUsed || itemUsed || bridgeUsed) {
+        ActionDiagnostics.logUse(player, result);
+        if (result.accepted()) {
             itemUseCooldown = 3;
             return true;
         }
-
-        performSwingAnimation();
-        itemUseCooldown = 3;
-        return true;
+        return false;
     }
 
     protected boolean performBlockActivationUse(MovingObjectPosition target, ItemStack held, float hitX, float hitY,
@@ -288,15 +231,18 @@ public class PlayerActionPack {
 
     protected void performSwingAnimation() {
         player.swingItem();
-        if (player instanceof FakePlayer fake) fake.broadcastSwingAnimation();
+        if (player instanceof PlayerVisualSync visualSync) {
+            visualSync.broadcastSwingAnimation();
+        }
     }
 
-    protected void performEntityAttack(Entity targetEntity) {
+    protected boolean performEntityAttack(Entity targetEntity) {
         EntityAttackState attackState = EntityAttackState.capture(targetEntity);
         player.attackTargetEntityWithCurrentItem(targetEntity);
         if (!attackState.hasObservableAttackEffect(targetEntity)) {
-            performEntityAttackFallback(targetEntity);
+            return performEntityAttackFallback(targetEntity);
         }
+        return false;
     }
 
     protected boolean performEntityAttackFallback(Entity targetEntity) {
@@ -339,29 +285,26 @@ public class PlayerActionPack {
     }
 
     protected boolean performAttack(MovingObjectPosition target) {
-        if (target == null) {
-            performSwingAnimation();
-            return true;
-        }
+        AttackResult result = new AttackExecutor() {
 
-        if (target.typeOfHit == MovingObjectPosition.MovingObjectType.ENTITY) {
-            Entity targetEntity = target.entityHit;
-            if (targetEntity == null) {
-                performSwingAnimation();
-                return true;
+            @Override
+            protected boolean performEntityAttack(Entity targetEntity) {
+                return PlayerActionPack.this.performEntityAttack(targetEntity);
             }
 
-            performEntityAttack(targetEntity);
-            performSwingAnimation();
-            return true;
-        }
+            @Override
+            protected boolean performBlockAttack(MovingObjectPosition target) {
+                return PlayerActionPack.this.attackBlock(target);
+            }
 
-        if (target.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK) {
-            return attackBlock(target);
-        }
+            @Override
+            protected void swing() {
+                performSwingAnimation();
+            }
+        }.execute(target);
 
-        performSwingAnimation();
-        return true;
+        ActionDiagnostics.logAttack(player, result);
+        return result.accepted();
     }
 
     private boolean executeAction(ActionType type) {
@@ -369,7 +312,7 @@ public class PlayerActionPack {
             case USE:
                 return performUse(getTarget());
             case ATTACK:
-                return performAttack(getTarget());
+                return performAttack(getAttackTarget());
             case JUMP:
                 if (performMovementCompatBridge(MovementTrigger.JUMP)) {
                     return true;
@@ -381,14 +324,18 @@ public class PlayerActionPack {
                 }
                 return true;
             case DROP_ITEM:
-                player.dropOneItem(false);
-                return true;
+                return performDrop(false);
             case DROP_STACK:
-                player.dropOneItem(true);
-                return true;
+                return performDrop(true);
             default:
                 return false;
         }
+    }
+
+    private boolean performDrop(boolean dropAll) {
+        player.dropOneItem(dropAll);
+        syncEquipmentToWatchers();
+        return true;
     }
 
     private boolean attackBlock(MovingObjectPosition target) {
@@ -484,6 +431,12 @@ public class PlayerActionPack {
 
     private boolean isCreativeMode() {
         return player.theItemInWorldManager != null && player.theItemInWorldManager.isCreative();
+    }
+
+    private void syncEquipmentToWatchers() {
+        if (player instanceof PlayerVisualSync visualSync) {
+            visualSync.syncEquipmentToWatchers();
+        }
     }
 
     private static final class EntityAttackState {

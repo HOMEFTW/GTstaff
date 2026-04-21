@@ -9,6 +9,8 @@ import java.util.function.Consumer;
 
 import net.minecraft.server.MinecraftServer;
 
+import com.andgatech.gtstaff.fakeplayer.runtime.BotLifecycleManager;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotRuntimeView;
 import com.gtnewhorizon.gtnhlib.util.ServerThreadUtil;
 import com.mojang.authlib.GameProfile;
 
@@ -23,7 +25,7 @@ public final class FakePlayerSkinRestoreScheduler {
     @FunctionalInterface
     interface RebuildAction {
 
-        FakePlayer rebuild(MinecraftServer server, FakePlayer oldBot, GameProfile profile);
+        BotRuntimeView rebuild(MinecraftServer server, BotRuntimeView oldBot, GameProfile profile);
     }
 
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor(new ThreadFactory() {
@@ -38,7 +40,8 @@ public final class FakePlayerSkinRestoreScheduler {
     private static final Consumer<Runnable> DEFAULT_ASYNC_EXECUTOR = EXECUTOR::execute;
     private static final Consumer<Runnable> DEFAULT_MAIN_THREAD_EXECUTOR = ServerThreadUtil::addScheduledTask;
     private static final Resolver DEFAULT_RESOLVER = FakePlayerProfiles::resolveSkinProfile;
-    private static final RebuildAction DEFAULT_REBUILD_ACTION = FakePlayer::rebuildRestoredWithProfile;
+    private static final RebuildAction DEFAULT_REBUILD_ACTION =
+        (server, oldBot, profile) -> new BotLifecycleManager().rebuildRestoredWithProfile(server, oldBot, profile);
 
     private static final AtomicInteger generation = new AtomicInteger();
 
@@ -49,25 +52,25 @@ public final class FakePlayerSkinRestoreScheduler {
 
     private FakePlayerSkinRestoreScheduler() {}
 
-    public static void schedule(MinecraftServer server, FakePlayer fakePlayer) {
-        if (server == null || fakePlayer == null) {
+    public static void schedule(MinecraftServer server, BotRuntimeView runtime) {
+        if (server == null || runtime == null) {
             return;
         }
 
-        String botName = fakePlayer.getCommandSenderName();
+        String botName = runtime.name();
         if (botName == null || botName.trim().isEmpty()) {
             return;
         }
 
         int scheduledGeneration = generation.get();
-        asyncExecutor.accept(() -> resolveAndQueueRebuild(server, fakePlayer, botName, scheduledGeneration));
+        asyncExecutor.accept(() -> resolveAndQueueRebuild(server, runtime, botName, scheduledGeneration));
     }
 
     public static void cancelAll() {
         generation.incrementAndGet();
     }
 
-    private static void resolveAndQueueRebuild(MinecraftServer server, FakePlayer fakePlayer, String botName,
+    private static void resolveAndQueueRebuild(MinecraftServer server, BotRuntimeView runtime, String botName,
         int scheduledGeneration) {
         if (generation.get() != scheduledGeneration) {
             return;
@@ -83,7 +86,7 @@ public final class FakePlayerSkinRestoreScheduler {
             if (generation.get() != scheduledGeneration) {
                 return;
             }
-            rebuildAction.rebuild(server, fakePlayer, profile);
+            rebuildAction.rebuild(server, runtime, profile);
         });
     }
 

@@ -1,4 +1,560 @@
-# 开发日志
+﻿# 开发日志
+## 2026-04-22：修复假人饰品栏手动放置与 Shift 吞物品问题
+
+### 已完成
+- 根据实测反馈继续回查 FakePlayerInventoryContainer，确认 FakePlayerExtraSlot 之前没有显式 override isItemValid(...)，导致手动拖拽物品时额外槽仍会被当成可接受任意物品
+- 对照本地反编译 Container.mergeItemStack(...) 确认第二个根因：原版 1.7.10 在塞进空槽时不会检查 slot.isItemValid(...)，因此饰品槽即使底层 inventory 会拒绝，Shift-click 仍会把源堆数量清零，表现成“物品被吞”
+- 新增 FakePlayerInventoryContainerTest.extraSlotRejectsInvalidItemsForManualPlacement() 与 shiftClickDoesNotConsumeItemsWhenExtraSlotRejectsThem()，先锁住“手动不可放非法物品”和“Shift 不得吞物品”的红灯
+- FakePlayerInventoryContainer.FakePlayerExtraSlot 现已显式 override isItemValid(...)，统一复用 FakePlayerInventoryView.isItemValidForSlot(...)
+- mergeIntoExtraSlots(...) 不再复用会绕过槽位合法性检查的原版 mergeItemStack(...)，改为受限的额外槽合并逻辑：显式校验 slot.isItemValid(...)、堆叠兼容性与槽位上限，非法物品会直接保留在原槽位
+- 重新通过 FakePlayerInventoryCompatTest、FakePlayerInventoryContainerTest、FakePlayerInventoryViewTest、FakePlayerInventoryGuiHandlerTest、FakePlayerManagerServiceTest，并离线打包 v1.0.2，最新主 jar 时间戳更新到 2026-04-22 00:38
+
+### 遇到的问题
+- 上一轮只补到了 view / inventory 层，容器层的手动点击与 Shift 合并仍各自保留一条绕过校验的路径，所以游戏内看起来仍然是“什么都能放进去，而且 Shift 会吞”
+
+### 做出的决定
+- 今后额外槽的点击放置与 Shift 合并都统一经过槽对象自己的合法性判断，不再把原版 mergeItemStack(...) 直接用于 Baubles / Offhand 这类受限槽
+## 2026-04-22：为假人饰品栏补齐物品放置限制
+
+### 已完成
+- 根据实测反馈确认：客户端饰品槽虽然已显示图标和类型，但 `FakePlayerInventoryExtraSlot` 在无后端 inventory 的客户端路径里仍对任意物品返回 `isItemValid == true`，导致普通物品也能被放入 Baubles 槽
+- 新增 `FakePlayerInventoryViewTest.clientBaublesExtraSlotRejectsPlainItem()`，先复现普通 `Item` 在客户端饰品槽里被错误接受的红灯
+- `FakePlayerInventoryCompat` 现已新增客户端附加槽校验：Baubles 槽会反射检查物品是否实现 `IBauble`/`IBaubleExpanded`，并校验 `slotType` 是否匹配或是否为 `universal`
+- `FakePlayerInventoryExtraSlot.isItemValid(...)` 在客户端无后端 inventory 时，不再无条件放行，而是委托 `FakePlayerInventoryCompat.isClientExtraSlotItemValid(...)`
+- 保留服务端真实 `IInventory.isItemValidForSlot(...)` 校验链，不改变已接入的 Baubles / Backhand 后端槽写回逻辑
+- 重新通过 `FakePlayerInventoryCompatTest` 以及 UI 相关回归测试，并离线打包 `v1.0.2` 产物，最新 jar 时间戳更新到 2026-04-22 00:11
+
+### 遇到的问题
+- 这次崩溃的根因不是图标或布局，而是客户端先允许非法物品进入饰品槽，后续同步/渲染链再被外部模组假设“这里一定是合法 Bauble”而触发崩溃
+
+### 做出的决定
+- 客户端先挡住明显非法物品，服务端继续保留真实 inventory 校验，双层防线都在
+
+## 2026-04-22：重新打包当前 v1.0.2 jar
+
+### 已完成
+- 离线执行 `./gradlew.bat --offline --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true assemble`
+- 确认当前工作区已成功生成最新 `build/libs/gtstaff-v1.0.2.jar`、`build/libs/gtstaff-v1.0.2-dev.jar`、`build/libs/gtstaff-v1.0.2-sources.jar`
+- 最新主 jar 时间戳更新到 2026-04-22 00:02:57
+
+### 遇到的问题
+- 无
+
+### 做出的决定
+- 当前版本号继续保持 `v1.0.2`，本轮仅重新打包当前工作区产物，不改版本号
+
+## 2026-04-21：放宽假人攻击兜底正脸范围到45度
+
+### 已完成
+- 根据需求把假人攻击兜底的正脸判定从原先约 30 度放宽到 45 度，让略偏侧前方的实体也能进入攻击 fallback
+- 新增 `TargetingServiceTest.attackFallbackIncludesEntityInsideFortyFiveDegreeCone()`，先复现约 34 度位置的实体在旧阈值下不会被选中的红灯
+- 将 `TargetingService` 的 `ATTACK_FALLBACK_FACING_DOT` 从约 `cos(30°)` 调整为 `cos(45°)`，保持实现仍然基于视线向量点乘
+- 重新通过 `TargetingServiceTest`、`AttackExecutorTest` 与 `PlayerActionPackTest`
+
+### 遇到的问题
+- 现有 30 度锥形对“脸大致对着但没完全对正”的场景还是偏严，尤其在命令式假人实操时容易出现玩家主观上觉得“已经在正面范围”但 fallback 仍不触发
+
+### 做出的决定
+- 这次只放宽攻击 fallback 的朝向阈值，不改射线命中优先级、距离判定和“超出正脸范围仍不应命中”的约束
+
+## 2026-04-21：移除假人背包里的问号饰品槽位
+
+### 已完成
+- 根据实测反馈确认：假人背包右侧饰品栏中仍会出现问号槽位，这些槽位对应 Baubles `unknownType`；把物品放进去后会进入外部模组并未准备好的 unknown 槽逻辑，导致客户端闪退
+- 新增 `FakePlayerInventoryCompatTest.hidesUnknownBaublesSlotTypes()`，先锁住 `unknown` 与空字符串类型不应被 GTstaff 视为可见饰品槽的红灯
+- `FakePlayerInventoryCompat` 现已新增 `isVisibleBaublesSlotType(...)`，统一过滤 `unknown` 与空类型
+- 服务端 `serverSlots(...)` 与客户端 `clientSlots(...)` 生成 Baubles 附加槽时，现已只保留真实类型槽位，不再把 `unknownType` 槽位塞进管理背包 UI
+- 重新通过 `FakePlayerInventoryCompatTest` 以及 UI 相关回归测试，并离线打包 `v1.0.2` 产物，最新 jar 时间戳更新到 2026-04-21 23:56
+
+### 遇到的问题
+- 旧的硬依赖实现会按 `slotType` 决定是否显示槽位，但当前反射兼容最初只按槽数量遍历，等于把本来应隐藏的 `unknownType` 也暴露到了 UI
+
+### 做出的决定
+- GTstaff 管理背包一律不显示 Baubles `unknownType` 槽位，不跟随外部模组“显示未分配槽位”的可选配置，以优先保证可用性与不闪退
+
+## 2026-04-21：恢复假人背包空饰品槽与盔甲槽图标
+
+### 已完成
+- 根据实测反馈确认：右侧 Baubles 饰品栏虽然恢复了槽位布局，但空槽内没有显示戒指/护符等类型图标，玩家无法判断饰品应放入哪个槽
+- 对照 `Baubles-Expanded` 确认原图标来源：重构前使用 `SlotBauble#getBackgroundIconIndex()`，其内部通过 Baubles `itemDebugger.getBackgroundIconForSlotType(slotType)` 返回 `empty_bauble_slot_<type>` 图标
+- `FakePlayerInventoryExtraSlot` 现已保存可选 `baublesSlotType`，`FakePlayerInventoryCompat` 会通过反射读取 `BaubleExpandedSlots.getSlotType(slot)` 并同步到服务端/客户端附加槽
+- 新增 `FakePlayerBaublesIconCompat`，在客户端通过反射读取 Baubles `itemDebugger` 的空槽背景图标，保持 GTstaff 对 Baubles 无硬运行时依赖
+- `FakePlayerInventoryContainer.FakePlayerExtraSlot` 现已为 Baubles 附加槽覆盖 `getBackgroundIconIndex()`，空饰品槽会恢复显示对应类型内部图标
+- `FakePlayerArmorSlot` 现已覆盖 `getBackgroundIconIndex()` 并返回 `ItemArmor.func_94602_b(armorType)`，空盔甲槽恢复原版头盔/胸甲/护腿/靴子图标
+- 新增回归测试覆盖 Baubles 槽类型元数据与盔甲槽背景图标方法，并重新通过 UI 相关测试
+- 重新离线打包 `v1.0.2` 产物，最新 jar 时间戳更新到 2026-04-21 23:47
+
+### 遇到的问题
+- 上一轮为了无硬依赖把 Baubles 槽抽象成通用附加槽，但没有保留 `SlotBauble` 的 `slotType` 和背景图标链路，导致可用性恢复了、视觉提示丢失了
+
+### 做出的决定
+- 继续保持 Baubles/Backhand 反射兼容路线，不恢复硬依赖；只在客户端实际存在 Baubles 时读取其原生空槽图标
+- 盔甲槽图标直接复用原版 `ItemArmor.func_94602_b(...)`，与玩家背包/外部 invsee 实现保持一致
+
+## 2026-04-21：恢复假人管理背包饰品栏与副手栏布局
+
+### 已完成
+- 根据实测反馈确认：管理背包 UI 在饰品栏/副手迁移后发生错乱，附加槽被显示在假人主背包下方，导致玩家背包整体下移，没有恢复重构前的右侧饰品栏与副手装备位
+- 新增 `FakePlayerInventoryContainerTest.containerRestoresEquipmentLayoutWithoutShiftingPlayerInventory()`，先复现 Baubles 槽坐标、副手槽坐标、玩家背包顶部与 GUI 高度不符合旧布局的红灯
+- 新增 `FakePlayerBaublesSlotLayout`，把 Baubles 面板列数、滚动偏移与隐藏槽位计算集中管理
+- `FakePlayerInventoryContainer` 现已恢复固定 203 高度布局：副手槽放回装备区 `80,18`，Baubles 槽放到右侧面板 `184,18` 起始位置，玩家背包顶部保持 `125`
+- `FakePlayerInventoryGui` 现已恢复 256 宽管理界面：左侧仍绘制原版 chest-style 背包，右侧绘制独立 Baubles 面板和滚动条
+- 重新通过 UI 相关测试，并离线打包 `v1.0.2` 产物，最新 jar 时间戳更新到 2026-04-21 23:32
+
+### 遇到的问题
+- 根因不是附加槽同步失败，而是上一轮把附加槽作为“普通背包额外行”显示，和原设计的“副手在装备区、饰品栏在右侧独立面板”不一致
+
+### 做出的决定
+- 附加槽仍保留在容器 fake slot 区间中以维持同步与 Shift-click 逻辑，但显示布局不再影响普通假人背包与玩家背包位置
+- 当前版本号继续保持 `v1.0.2`，本轮作为 UI 布局回归修复重新打包
+
+## 2026-04-21：修复假人丢物品后的手持物残影
+
+### 已完成
+- 根据实测反馈确认：假人执行 `drop` / `dropStack` 后，服务端背包中物品已经不存在，但客户端仍可能看到物品残留在假人手上
+- 确认根因：`PlayerActionPack` 的 `DROP_ITEM` / `DROP_STACK` 只调用 `player.dropOneItem(...)`，没有像 `setSlot` 或背包容器编辑那样调用 `PlayerVisualSync.syncEquipmentToWatchers()`
+- 新增 `PlayerActionPackTest.dropItemActionsSyncHeldItemForVisualSyncPlayers()`，先复现丢物品后没有触发装备同步的红灯
+- 将丢单个与丢整组收口到 `performDrop(...)`，在 `dropOneItem(...)` 后立即刷新观察客户端的手持装备包
+- 保持 `setSlot(...)` 使用同一个 `syncEquipmentToWatchers()` helper，减少后续动作同步遗漏
+- 重新通过 `PlayerActionPackTest`
+- 重新离线打包 `v1.0.2` 产物，最新 jar 时间戳更新到 2026-04-21 23:16
+
+### 遇到的问题
+- 这个问题不是物品没有被真正丢出，而是服务端 inventory 已改变后缺少 `S04PacketEntityEquipment` 刷新，导致观察客户端沿用旧的手持物渲染缓存
+
+### 做出的决定
+- 丢物品动作属于会改变当前手持物的动作，必须和切换 hotbar / 背包容器编辑一样主动同步装备外观
+- 当前版本号继续保持 `v1.0.2`，本轮作为动作视觉同步修复重新打包
+
+## 2026-04-21：迁移假人背包饰品栏与副手槽位
+
+### 已完成
+- 确认根因：假人背包管理界面只暴露固定 40 槽（护甲、hotbar、主背包），`FakePlayerInventoryContainer` 也把玩家背包起点写死为 40，因此 Baubles Expanded 饰品栏与 Backhand 副手都没有进入容器同步
+- 新增 `FakePlayerInventoryExtraSlot`，把可选扩展槽抽象为可追加的 fake inventory 槽位，基础 40 槽顺序保持不变
+- 新增 `FakePlayerInventoryCompat`，通过纯反射可选接入 Baubles Expanded 与 Backhand：Baubles 使用 `BaublesApi.getBaubles(...)` 的 `IInventory`，Backhand 使用 `BackhandUtils.getOffhandItem(...)` / `setPlayerOffhandItem(...)` / `getOffhandSlot(...)`
+- `FakePlayerInventoryView` 现在会在基础 40 槽后追加饰品槽和副手槽，客户端也会按本地已加载模组创建对应同步槽，避免服务端容器槽位和客户端 GUI 槽位数量不一致
+- `FakePlayerInventoryContainer` 改为动态计算 fake slot 数量、玩家背包起点和 GUI 高度；附加槽会显示在假人主背包下方，玩家背包整体下移
+- Shift-click 规则已调整：护甲仍优先进入护甲槽，Baubles 合法饰品优先进饰品槽，普通物品先进入假人普通背包，普通背包满后才尝试副手槽
+- 补充 `FakePlayerInventoryViewTest` 与 `FakePlayerInventoryContainerTest` 覆盖附加槽写回、动态布局、附加槽堆叠限制、饰品 Shift-click 优先级和副手 fallback
+- 重新通过 UI 相关测试，并离线打包 `v1.0.2` 产物，最新 jar 时间戳更新到 2026-04-21 23:06
+
+### 遇到的问题
+- Baubles 的饰品槽最大堆叠应为 1，不能继续使用 `FakePlayerInventoryView.getInventoryStackLimit() == 64`；已为附加槽使用自有 `getSlotStackLimit()`
+- Backhand 副手不是单独 inventory 文件，而是通过 mixin 扩展 `InventoryPlayer.mainInventory` 并暴露 `BackhandUtils` API；因此本轮通过反射虚拟出 1 槽 `IInventory` 来写回副手
+
+### 做出的决定
+- 不对 Baubles / Backhand 建立硬依赖，避免未安装对应模组时 GTstaff 启动失败
+- 本轮先接入 GTNH 更常见的 Baubles Expanded 与 Backhand 副手；Battlegear2 副手未硬接，后续如果用户实测需要可按同一附加槽抽象继续增加 fallback
+- 当前版本号继续保持 `v1.0.2`，本轮作为 UI/背包兼容迁移重新打包
+
+## 2026-04-21：收窄攻击兜底实体扫描到正脸方向
+
+### 已完成
+- 根据实测反馈确认：上一轮攻击兜底虽然解决了“精确射线未命中就打不到”的问题，但扫描范围过大，会把身侧实体也纳入攻击目标
+- 新增 `TargetingServiceTest.attackFallbackIgnoresEntityOutsideFacingCone()`，先复现侧前方实体会被大范围兜底误选中的红灯
+- 在 `TargetingService.nearestAttackableEntity(...)` 中加入面朝方向约束：候选实体必须位于玩家视线前方约 30 度锥形范围内，才允许作为攻击兜底目标
+- 兜底距离改为基于实体碰撞盒中心点与假人眼睛位置计算，避免单纯使用实体 `posX/posY/posZ` 带来的偏差
+- 保留精确射线优先级：如果原版式射线已经命中实体，仍直接使用该目标；只有射线未命中实体时才进入正脸锥形兜底
+- 重新通过 `PlayerActionPackTest`、`TargetingServiceTest` 与 `AttackExecutorTest`
+- 重新离线打包 `v1.0.2` 产物，最新 jar 时间戳更新到 2026-04-21 22:49
+
+### 遇到的问题
+- 之前的兜底直接使用 `player.boundingBox.expand(reach, 1, reach)` 找最近可碰撞实体，本质是一个大盒子，不区分正面、侧面和背后
+- 只按距离选最近实体对命令式假人太激进，容易出现“脸没对着也打到”的手感问题
+
+### 做出的决定
+- 攻击兜底只服务于“脸正对但射线没精确穿过”的容错，不再承担身边自动索敌功能
+- 当前版本号继续保持 `v1.0.2`，本轮作为攻击目标选择手感修复重新打包
+
+## 2026-04-21：修复 USE 频率动作只触发一次
+
+### 已完成
+- 根据实测反馈确认：`attack` 的频率档位正常，但 `use continuous / use interval` 不会持续触发，任何档位都只使用一次
+- 确认根因：`PlayerActionPack.performUse(...)` 成功后会把 `itemUseCooldown` 设为 `3`，但该冷却值没有逐 tick 递减，导致第一次使用后后续 `USE` 调度永久被 `UseExecutor` 的 `itemUseCooldown > 0` 拦截
+- 新增 `PlayerActionPackTest.intervalUseRepeatsAfterCooldownExpires()`，先复现 `use interval 5` 跑 6 tick 仍只触发一次使用的红灯
+- 在 `PlayerActionPack.onUpdate()` 开头补齐 `itemUseCooldown` 每 tick 递减，使 `use interval` 与 `use continuous` 能在冷却结束后继续触发
+- 重新通过 `PlayerActionPackTest`、`FakePlayerManagerServiceTest` 与 `CommandPlayerTest`
+- 重新离线打包 `v1.0.2` 产物，最新 jar 时间戳更新到 2026-04-21 22:44
+
+### 遇到的问题
+- 第一次写红灯测试时使用真实 `new Item()` 会触发 Minecraft 静态初始化问题；已改为方块右键测试路径，避免测试依赖真实物品注册环境
+- 这个问题只影响 `USE`，因为 `ATTACK` 没有 `itemUseCooldown`，所以攻击频率表现正常
+
+### 做出的决定
+- 冷却应该按实体 tick 自然流逝，而不是等下一次 `USE` 尝试时才处理；这样 UI 的各个使用频率档位和命令 `use interval <ticks>` 都能保持语义一致
+- 当前版本号继续保持 `v1.0.2`，本轮作为 `USE` 动作调度修复重新打包
+
+## 2026-04-21：修复 nextgen 假人 creative 能力位导致仍然无敌
+
+### 已完成
+- 根据实测反馈确认：假人现在可以造成伤害，但自身仍不会受到伤害，说明攻击输出链已经打通，剩余问题在假人受伤入口
+- 追踪原版 `EntityPlayer.attackEntityFrom(...)`，确认根因是第二道拦截：`ItemInWorldManager.setGameType(CREATIVE)` 会设置 `capabilities.disableDamage = true`，即使 `GTstaffForgePlayer.isEntityInvulnerable()` 已覆盖为 `false`，原版玩家受伤链仍会因 `disableDamage && !source.canHarmInCreative()` 返回 `false`
+- 新增 `GTstaffForgePlayerTest.attackTemporarilyClearsCreativeDamageFlag()`，先复现 creative 能力位下受伤链会被拦截的红灯
+- 在 `GTstaffForgePlayer.attackEntityFrom(...)` 中为在线 nextgen bot 临时清除 `capabilities.disableDamage`，只包住一次原版受伤调用，并在 `finally` 中恢复原值
+- 保留 `disconnected` 状态的隔离语义：显式下线后的 nextgen bot 仍不会受伤
+- 重新通过 `GTstaffForgePlayerTest`、`PlayerActionPackTest`、`TargetingServiceTest` 与 `AttackExecutorTest`
+- 重新离线打包 `v1.0.2` 产物，最新 jar 时间戳更新到 2026-04-21 22:38
+
+### 遇到的问题
+- 上轮测试只断言了 `isEntityInvulnerable()`，没有覆盖 `EntityPlayer.attackEntityFrom(...)` 内部的 `capabilities.disableDamage` 分支；这就是“看起来已经不是 invulnerable，但游戏内仍然不掉血”的原因
+- creative/世界默认模式会通过 `setGameType(...)` 自动改写玩家能力，不能只修 Forge `FakePlayer` 的无敌覆盖
+
+### 做出的决定
+- nextgen bot 的受伤入口要以“命令式假人可被真实伤害”为优先级：即使当前游戏模式保留 creative 能力，也允许伤害链进入；但调用后恢复原能力位，避免破坏飞行、创造模式等状态显示
+- 当前版本号继续保持 `v1.0.2`，本轮作为受伤链可靠性修复重新打包
+
+## 2026-04-21：修复假人攻击精确射线未命中时实体无伤害
+
+### 已完成
+- 确认上轮“假人可受伤 / 可攻击玩家目标”修复仍不足以解决实战攻击无效：`PlayerActionPack` 只有精确射线命中实体时才会进入实体伤害链，射线未命中时只会空挥手
+- 新增 `PlayerActionPackTest.attackFallsBackToNearbyEntityWhenPreciseRayMisses()`，先复现近战范围内有实体但精确射线未穿过时不会造成伤害的红灯
+- 为 `TargetingService` 新增 `resolveForAttack()`：保留原精确命中优先级，但当攻击射线没有命中实体时，会在近战范围内选择最近可碰撞实体作为攻击目标
+- `PlayerActionPack` 的 `ATTACK` 入口改为使用攻击专用目标解析；`USE` 仍使用原精确右键目标解析，避免影响方块/物品使用兼容
+- 重新通过 `PlayerActionPackTest`、`TargetingServiceTest`、`AttackExecutorTest` 与 `GTstaffForgePlayerTest`
+- 重新离线打包 `v1.0.2` 产物，最新 jar 时间戳更新到 2026-04-21 21:55
+
+### 遇到的问题
+- 实战中的 fake player 没有真实客户端准星反馈，单靠 vanilla 风格射线命中太脆弱；只要朝向、实体碰撞盒或脚下方块稍有偏差，就会表现为“攻击指令发出但实体完全无伤害”
+- 上轮伤害 fallback 本身能扣血，但它挂在“已经选中实体”之后，因此目标解析为空时根本不会被调用
+
+### 做出的决定
+- 攻击动作单独加入近战实体兜底，优先解决命令式 fake player 的可靠性；右键使用不套用该兜底，避免误触附近实体或方块交互
+- 当前版本号继续保持 `v1.0.2`，本轮作为攻击可靠性修复重新打包
+
+## 2026-04-21：修复 nextgen 假人永久无敌与玩家目标攻击检查
+
+### 已完成
+- 确认根因：nextgen `GTstaffForgePlayer` 继承 Forge `FakePlayer`，而 Forge `FakePlayer.isEntityInvulnerable()` 默认永远返回 `true`，`canAttackPlayer(...)` 默认永远返回 `false`
+- 为 `GTstaffForgePlayerTest` 新增 nextgen 假人可受伤与可攻击玩家目标的回归断言，先复现红灯
+- 在 `GTstaffForgePlayer` 中覆盖 `isEntityInvulnerable()` 与 `canAttackPlayer(...)`：在线 bot 不再永久无敌，显式 `markDisconnected()` 后仍保持隔离
+- 重新通过 `GTstaffForgePlayerTest` 与 `PlayerActionPackTest`，确认 nextgen 实体伤害语义与既有攻击 fallback 没有回退
+- 重新离线打包 `v1.0.2` 产物，最新 jar 时间戳更新到 2026-04-21 21:41
+
+### 遇到的问题
+- “假人不受伤”不是 GTstaff 自动复活逻辑导致，而是 Forge `FakePlayer` 基类本身把实体设成永久 invulnerable；如果只看 `GTstaffForgePlayer.onDeath(...)` 会误判方向
+- “不造成实体伤害”中至少玩家类目标会被 `canAttackPlayer(...) == false` 拦截；普通 living 目标仍有 `PlayerActionPack` 的强制伤害 fallback，但这次一并补齐了玩家目标攻击检查
+
+### 做出的决定
+- nextgen bot 在线时应该更接近真实玩家，允许进入原版伤害链；显式下线后的实体继续通过 `disconnected` 状态隔离，避免被自动复活或继续参与战斗
+- 本轮继续保持 `v1.0.2` 版本号，仅重新打包稳定性修复产物
+
+## 2026-04-21：修复 respawn mixin 的非私有静态 helper 启动崩溃
+
+### 已完成
+- 复现并确认启动报错根因：`EntityPlayerMP_RespawnMixin` 中的 `gtstaff$copyFakePlayerState(...)` 是包级 `static` helper，被 Sponge Mixin 判定为非法成员
+- 顺手排查同类风险，确认 `ServerConfigurationManagerMixin` 中也残留包级 `static` respawn helper，存在“修完一个下次启动再炸另一个”的风险
+- 新增 `RespawnMixinHooks`，把 `copyFakePlayerState(...)`、nextgen respawn player 构造与测试用 factory 注入入口统一抽离到独立 hooks 类
+- `EntityPlayerMP_RespawnMixin` 与 `ServerConfigurationManagerMixin` 现在只保留真正的注入方法，mixin 本体不再暴露非私有静态 helper
+- 调整 `RespawnMixinsTest` 改为直接调用 `RespawnMixinHooks`，并重新通过该聚焦回归
+- 重新离线打包 `v1.0.2` 产物，最新 jar 时间戳更新到 2026-04-21 21:14
+
+### 遇到的问题
+- 第一次清理 `ServerConfigurationManagerMixin` 时把 `GameProfile` import 一起删掉了，导致中途出现一次纯编译错误；补回 import 后回归恢复为绿色
+- 这类问题不会在普通单元测试里自然暴露，而是典型的“启动期 Mixin 验证失败”，所以这次额外做了目录级静态扫描，确认 mixin 目录里只剩合法的 `private static` 注入 helper
+
+### 做出的决定
+- 对 mixin 里需要被测试或复用的静态逻辑，不再继续放在 mixin 本体里做包级 helper；后续统一优先放到独立 hooks / helper 类，mixin 自己只保留注入入口
+- 当前版本号继续保持 `v1.0.2`，这次是稳定性修复重打包，不额外抬版本号
+
+## 2026-04-21：重新打包清理后代码的 v1.0.2 jar
+
+### 已完成
+- 离线执行 `./gradlew.bat --offline --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true assemble`
+- 确认最新产物已重新生成：`build/libs/gtstaff-v1.0.2.jar`、`build/libs/gtstaff-v1.0.2-dev.jar`、`build/libs/gtstaff-v1.0.2-sources.jar`
+- 核对 `build/libs` 时间戳：主 jar 与 sources jar 更新时间为 2026-04-21 21:07，dev jar 为 21:07:12
+
+### 遇到的问题
+- 无新的构建阻塞；本轮继续沿用 `--offline` 与禁用 buildscript update check 的打包方式，避免 GTNH Gradle 在线元数据解析不稳定
+
+### 做出的决定
+- 当前对外交付仍以 `v1.0.2` 版本号维持不变；这次打包是把最近的 nextgen 收尾清理与恢复重建修复重新编入现有版本产物
+- 后续若继续做游戏内人工烟测或 Baubles Expanded 兼容，再根据变更范围决定是否需要抬新版本号
+
+## 2026-04-21：清理命令与 UI 层残留的 legacy-only helper
+
+### 已完成
+- 为 `CommandPlayerTest` 新增 `purgeUsesLifecycleManagerWhenLegacyFakePlayerIsOnline()`，确认在线 legacy bot 的 `purge` 也已经走 `BotRuntimeView + BotLifecycleManager` 主链
+- 删除 `CommandPlayer.handlePurge(...)` 中依赖 `FakePlayerRegistry.getFakePlayer(...)` 的旧 online legacy fallback，保留“在线 runtime 主链 + 离线持久化 bot”两条真实路径
+- 删除 `CommandPlayer` 中未再使用的 `requireFakePlayer(...)`、`requireActionPack(...)` 与 `formatArmorSummary(...)`
+- 删除 `FakePlayerManagerService` 中未再使用的 `findBot(...)`、`findBotOrThrow(...)`
+- 重新通过 `CommandPlayerTest` 与 `FakePlayerManagerServiceTest`
+
+### 遇到的问题
+- 清理 import 时发现 `FakePlayer` 虽然不再作为命令/UI 主查询入口存在，但 `colorizeName(...)` 这个静态颜色工具仍被提示文案复用，因此不能把 `FakePlayer` import 一刀切掉
+- `CommandPlayer` 里还有一个只剩定义不再被调用的 `formatArmorSummary(FakePlayer target)`，第一次编译失败后才把它一起清掉
+
+### 做出的决定
+- 对命令/UI 层这类已经完成 runtime-neutral 收口的模块，优先把“死掉的 legacy helper”尽快删掉，避免后续维护时再次误把旧入口当成仍受支持的主链
+- `FakePlayer` 在命令/UI 层仅继续作为静态展示工具类存在，不再保留作为在线 bot 查询与操作入口的职责
+
+## 2026-04-21：补齐 nextgen 恢复后补皮重建链的 runtime-aware 收口
+
+### 已完成
+- 将 `FakePlayerRestoreScheduler` 的补皮调度从 legacy `FakePlayer` 收口改为统一传递 `BotRuntimeView`，nextgen 恢复出的 bot 也会进入异步补皮流程
+- 将 `FakePlayerSkinRestoreScheduler` 的调度与重建回调改为 runtime-aware：成功解析 profile 后，统一回主线程调用 `BotLifecycleManager.rebuildRestoredWithProfile(...)`
+- 为 `BotLifecycleManager` 新增 runtime-aware 的 `rebuildRestoredWithProfile(...)` 分派，并在 `NextGenBotFactory.rebuildRestoredWithProfile(...)` 中补齐 nextgen 重建时的 owner、位置、经验、背包 hotbar 选择以及 monitor/follow/repel 等运行时状态迁移
+- 新增 `NextGenBotFactoryTest.rebuildRestoredWithProfileReplacesRegisteredRuntimeAndPreservesServiceState()`，确认 nextgen 重建后会替换 registry 中的在线 runtime、旧实体会正确下线，且服务状态不会丢
+- 重新通过 `FakePlayerRestoreSchedulerTest`、`FakePlayerSkinRestoreSchedulerTest`、`NextGenBotFactoryTest` 与 `BotLifecycleManagerTest`
+
+### 遇到的问题
+- 之前恢复补皮链虽然已经能处理 `BotRuntimeView` 恢复列表，但真正安排异步补皮与主线程重建的部分仍只认 legacy `FakePlayer`，导致 nextgen bot 重启恢复后拿不到同等的皮肤重建闭环
+- 新增回归测试时，一开始误把测试桩写成了“只按名字造 player，不复用传入 `GameProfile`”，导致 profile UUID 断言失败；最终确认是测试桩问题而不是生产实现掉 profile
+
+### 做出的决定
+- 对“恢复后补皮重建”这种已经跨过 registry / scheduler / lifecycle 的链路，优先在统一入口做 runtime-aware 收口，而不是继续在 legacy / nextgen 两边分散补分支
+- Wave D 收尾阶段后续继续聚焦低优先级 legacy-only helper 清理与游戏内人工烟测，不再把 nextgen 恢复补皮视为未迁移缺口
+
+## 2026-04-21：清理 nextgen 注册覆盖 legacy 时的陈旧 registry 映射
+
+### 已完成
+- 调整 `FakePlayerRegistry.registerRuntimeInternal(...)`：当同名 bot 以非 legacy runtime 重新注册时，会主动清除 `fakePlayers` 中同名的旧 legacy 实体映射
+- 新增 `FakePlayerRegistryTest.registerRuntimeClearsStaleLegacyLookupWhenReplacingWithNextGen()`，覆盖“同名 bot 从 legacy 句柄切到 nextgen runtime 后，不再能通过 `getFakePlayer(...)` 拿到陈旧 legacy 实体”的回归场景
+- 重新通过 `FakePlayerRegistryTest`，确认 runtime 注册、快照持久化与新的 stale-entry 清理行为都已稳定
+
+### 遇到的问题
+- `FakePlayerRegistry` 同时维护 `onlineRuntimes` 与 legacy `fakePlayers` 两套索引；如果同名 bot 被 nextgen runtime 覆盖注册，而旧的 legacy 索引不清理，后续命令或清理链就有机会拿到过期实体引用
+
+### 做出的决定
+- 对这种“runtime-neutral 主索引已正确，但 legacy 辅助索引会残留旧引用”的问题，优先在 registry 层做主动清理，而不是把每个调用方都改成额外防 stale
+
+## 2026-04-21：补齐 nextgen bot 的 FakeNetHandler kick 下线链
+
+### 已完成
+- 将 `FakeNetHandlerPlayServer.kickPlayerFromServer(...)` 的 GTstaff 假人踢出逻辑抽成 `handleFakePlayerKick(...)`，便于对 legacy / nextgen 两条分支分别做回归验证
+- legacy `FakePlayer` 继续沿用原有 `kill()` 语义；nextgen `GTstaffForgePlayer` 在 duplicate-login / idle kick 下现在会执行 `markDisconnected() -> unregister -> playerLoggedOut -> setDead`
+- 新增 `FakeNetHandlerPlayServerTest`，覆盖 nextgen bot 的 duplicate-login 踢出会真正摘除在线 runtime，以及无关 reason 不会误清理
+- 重新通过 `FakeNetHandlerPlayServerTest`、`BotSessionTest` 与 `BotLifecycleManagerTest`，确认 nextgen session handler 的下线链和已有 lifecycle 语义保持一致
+
+### 遇到的问题
+- `BotSession` 虽然早就把 nextgen bot 接到了 `FakeNetHandlerPlayServer`，但这个 handler 之前只会在 `playerEntity instanceof FakePlayer` 时做真正的清理；nextgen 遇到 duplicate-login/idle 这类会话级踢出时，实际上并不会被摘掉
+
+### 做出的决定
+- 继续优先补齐“nextgen 已经走进同一基础设施，但基础设施内部仍只认 legacy 类型”的缺口；这类问题通常不需要改大架构，但如果不补，运行时状态会悄悄泄漏
+
+## 2026-04-21：统一 shadow 命令的 nextgen fake-player 防护
+
+### 已完成
+- 将 `CommandPlayer.handleShadow(...)` 的“目标已经是假人”判断从 legacy `FakePlayer` 类型判断改为复用 `ServerUtilitiesCompat.isFakePlayer(...)`
+- nextgen `GTstaffForgePlayer` 现在也会被 `shadow` 命令正确拒绝，不会再因命令层只认 legacy 类型而被误当成真人目标
+- 为 `CommandPlayerTest` 新增 `shadowRejectsNextGenFakePlayerTarget()`，覆盖 nextgen fake-player 的 shadow 防护回归场景
+- 连同此前的 restore scheduler / fake-player 分类测试一起重新通过 `CommandPlayerTest`、`FakePlayerRestoreSchedulerTest` 与 `ServerUtilitiesCompatTest`
+
+### 遇到的问题
+- 默认 runtime 切到 nextgen 后，命令层仍残留少量“只是想判断 GTstaff 假人身份，却还只认 legacy `FakePlayer`”的分支；`shadow` 正是其中最容易被用户直接触发的一条入口
+
+### 做出的决定
+- 继续把“纯身份识别型”的 legacy 判断统一收口到 `ServerUtilitiesCompat.isFakePlayer(...)`，避免命令层、scheduler 与底层兼容点分别维护三套 nextgen 识别规则
+
+## 2026-04-21：统一 restore scheduler 与 knockback 的 GTstaff fake-player 识别
+
+### 已完成
+- 将 `FakePlayerRestoreScheduler.isReady(...)` 的集成服就绪判断改为复用 `ServerUtilitiesCompat.isFakePlayer(...)`，不再只把 legacy `FakePlayer` 排除在“真实玩家已进入”之外
+- 新增 `FakePlayerRestoreSchedulerTest.integratedServerStillWaitsWhenOnlyNextGenBotIsPresent()`，覆盖“集成服玩家列表里只有 nextgen bot 时，restore 仍应继续等待真实玩家进入”的回归场景
+- 将 `Entity_KnockbackMixin` 也改为复用同一套 fake-player 识别逻辑，使 nextgen `GTstaffForgePlayer` 与 legacy 假人在 knockback 后都能一致地标记 `velocityChanged`
+- 重新通过 `FakePlayerRestoreSchedulerTest` 与 `ServerUtilitiesCompatTest`，确认 fake-player 分类与 restore readiness 新逻辑都已稳定
+
+### 遇到的问题
+- nextgen runtime 默认启用后，代码里仍有少量“只是想判断 GTstaff 假人身份，却还只认 legacy `FakePlayer` 类型”的位置；这类判断如果继续分散维护，很容易一边补上 nextgen，另一边又漏掉 scheduler 或底层兼容点
+- `ServerConfigurationManagerMixin` / `EntityPlayerMP_RespawnMixin` 这类 respawn 相关 Mixin 目前虽然也带 legacy-only 判断，但它们牵涉 nextgen runtime 绑定与会话重挂，不适合在没设计完整 nextgen respawn 重建链之前做半截迁移
+
+### 做出的决定
+- 先优先把“纯身份识别型”的 legacy-only 判断收口到统一 helper，比如 restore readiness 与 knockback；对牵涉 runtime 重建的 respawn mixin，暂时保持谨慎，不做只改类型判断但不补 runtime 绑定的半成品迁移
+
+## 2026-04-21：补齐 nextgen bot 的自然死亡自动复活与显式下线隔离
+
+### 已完成
+- 为 `GTstaffForgePlayer` 补上与 legacy 假人一致的 `respawnFake()`、死亡后自动复活与 `disconnected` 短路保护
+- `GTstaffForgePlayer.onUpdate()` 现在会在 bot 非下线状态下，对 `isDead && deathTime > 0` 的 nextgen 假人自动执行复活，再继续 `base -> action -> runtime -> living` 运行时 tick
+- `GTstaffForgePlayer.onDeath(...)` 现在会在正常在线状态下自动复活，避免 nextgen bot 因自然死亡直接停摆
+- 为 `BotLifecycleManager.kill(...)` 补上 `GTstaffForgePlayer.markDisconnected()`，确保显式 `kill/purge` 下线不会被新的自动复活逻辑反向拉活
+- 新增并通过 `GTstaffForgePlayerTest` 的 nextgen 死亡/下线回归测试，以及 `BotLifecycleManagerTest.killMarksNextGenForgePlayerDisconnectedBeforeRemoval()`
+
+### 遇到的问题
+- nextgen 当前走的是 Forge `FakePlayer` 继承链，不会自动继承 legacy `FakePlayer` 的 `onDeath -> respawnFake()` 语义；如果不手动补齐，nextgen bot 自然死亡后会真的进入死亡态
+- 为了验证 `BotLifecycleManager.kill(...)` 的 nextgen 分支，测试桩需要补齐 `inventoryContainer/openContainer/inventory` 的最小状态，否则 `EntityPlayer.setDead()` 会先在轻量测试环境里空指针
+
+### 做出的决定
+- nextgen 保持与 legacy 一致的“自然死亡自动复活、显式 kill/purge 不复活”语义，优先在 `GTstaffForgePlayer` 本体补齐，而不是继续依赖只覆盖 legacy 类型的 respawn mixin
+- 显式下线语义继续收口到 lifecycle 层处理，由 `BotLifecycleManager.kill(...)` 为 nextgen bot 先打 `disconnected` 标记，再执行世界/会话摘除
+
+## 2026-04-21：补齐 runtime-only nextgen bot 的 purge 清理并压稳恢复态回归测试
+
+### 已完成
+- 将 `CommandPlayer.handlePurge(...)` 的在线 bot 分支改为优先读取 `BotRuntimeView`，不再依赖 legacy `FakePlayer`
+- runtime-only nextgen bot 现在执行 `purge` 时会先走 `BotLifecycleManager.kill(...)` 关闭在线实体，再继续做持久化与玩家数据清理，避免只删 registry 但在线 bot 仍残留
+- 将 `resolveProfileId(...)` 从 legacy `FakePlayer` 放宽到通用 `EntityPlayerMP`，使 nextgen 在线 bot 会优先使用自身 `GameProfile` 的真实 UUID 清理 `playerdata/stats`
+- 为 `CommandPlayerTest` 新增 `purgeUsesLifecycleManagerWhenRuntimeOnlyBotIsOnline()`，覆盖 nextgen runtime-only 假人的清理链路
+- 为 `CommandPlayerTest` 新增 `purgeUsesOnlineRuntimeProfileIdForNextgenCleanup()`，覆盖 nextgen 在线 bot 的真实 profile UUID 文件清理
+- 将 `BotLifecycleManagerTest.restoreNextGenReappliesPersistedServiceState()` 改成显式锁定 `BotRuntimeMode.NEXTGEN`，避免组合测试时受全局配置残留影响而误走 legacy 恢复分支
+- 重新通过 `CommandPlayerTest` 与 `BotLifecycleManagerTest`，确认 purge 修复、profile UUID 清理与 nextgen 恢复态回归测试都已稳定
+
+### 遇到的问题
+- `purge` 之前虽然已经支持清离线持久化 bot，但在线分支仍默认先拿 legacy `FakePlayer`；对 runtime-only nextgen bot，这会导致“看起来 purge 成功，实际上在线 runtime 没有被 kill”
+- 新补的恢复态回归测试单独跑是绿的，但和命令测试一起跑时会被别的测试留下的 `fakePlayerRuntimeMode=legacy` 污染，最终误走到 old restore path 并在轻量 server harness 上炸掉世界加载
+
+### 做出的决定
+- `purge` 后续统一以在线 `BotRuntimeView` 作为第一优先级入口，legacy `FakePlayer` 只作为实体/皮肤档案信息的可选补充，而不是主分支判定条件
+- 运行时模式相关回归测试尽量显式固定 `runtimeMode()` 或测试配置，不再依赖全局静态配置的默认值
+
+## 2026-04-21：让 nextgen runtime 复用真实 FollowService
+
+### 已完成
+- 将 `FollowService` 从 `FakePlayer` 绑定放宽到 `EntityPlayerMP`，保留 legacy 现有语义不变，同时允许 nextgen `GTstaffForgePlayer` 直接复用原跟随服务
+- 将 `FollowService.ServerProvider` / `CrossDimensionMover` 与测试构造器放宽到可复用层级，使 nextgen runtime 测试能直接注入跟随服务桩
+- 将 `NextGenFollowRuntime` 从纯状态壳改为真正持有 `FollowService` 的实现，`following / targetUUID / range / teleportRange / tick()` 现已全部委托到底层真实服务
+- 将 `NextGenBotRuntime.tickRuntimeServices()` 扩展为按 `follow -> monitor` 顺序驱动 nextgen 运行时服务
+- 将 `CommandPlayer.handleFollow(... stop)` 与 `FakePlayerManagerService.stopFollow(...)` 的“清移动输入”逻辑收口到 runtime-neutral `EntityPlayerMP`，nextgen 停止跟随后不会残留上一 tick 的移动量
+- 新增并通过 `NextGenBotRuntimeServicesTest.nextGenFollowTickUsesFollowService()`，并重新通过 `FollowServiceTest`、`GTstaffForgePlayerTest`、`CommandPlayerTest`、`FakePlayerManagerServiceTest`
+
+### 遇到的问题
+- `FollowService` 之前虽然逻辑已经成熟，但类型边界卡在 `FakePlayer`，导致 nextgen 只能复制状态而无法接回真正的跟随/跨维度/重试链路；这轮的核心工作就是把服务本身泛化，而不是再写一套 nextgen 跟随逻辑
+
+### 做出的决定
+- `follow` 与 `monitor` 一样，继续采用“复用 legacy 服务实现 + runtime facade 包装 + 在 `GTstaffForgePlayer` runtime phase 驱动”的迁移方式，而不是维护两套平行行为
+
+## 2026-04-21：让 nextgen runtime 的 monitor 从状态壳接回真实扫描与 tick 链
+
+### 已完成
+- 为 `GTstaffForgePlayer` 的 `onUpdate()` 增加 runtime services phase，执行顺序现为 `base -> action -> runtime -> living`，为 nextgen 服务类接回逐 tick 行为留出稳定挂点
+- 为 `BotMonitorRuntime` 增加默认 `scanNow()`，让 `CommandPlayer` 与 `FakePlayerManagerService` 可以统一请求“立即扫描”，而不需要感知 runtime 类型
+- 将 `MachineMonitorService` 扩展为 runtime-neutral：新增基于 `EntityPlayerMP` 的 `tick(...)`、`scanNow(...)` 与扫描/发消息链路，legacy `FakePlayer` 继续复用同一实现
+- 将 `NextGenMonitorRuntime` 从简单状态壳改为真正持有 `MachineMonitorService` 的实现，现已支持 `scanNow()`、`overviewMessage()` 与逐 tick 监控提醒
+- 更新 `LegacyMonitorRuntime` 以复用新的 `scanNow()`，顺手让 legacy 的手动扫描路径也不再只是读缓存概览
+- 新增并通过 `GTstaffForgePlayerTest`、`NextGenBotRuntimeServicesTest`，确认 nextgen runtime services phase 已进入 tick 链，且 `NextGenMonitorRuntime.scanNow()` 会真正调用扫描逻辑
+
+### 遇到的问题
+- `CommandPlayer` 与 UI 层原先都只会读 `overviewMessage()`，这在 nextgen 下意味着“如果 tick 还没跑过，就只能看到空壳状态”；本轮通过 `scanNow()` 把“立即扫描”语义单独提出来，避免命令/UI 继续读旧缓存
+
+### 做出的决定
+- `monitor` 继续走“runtime-neutral service + runtime phase hook”的迁移方式，而不是为 nextgen 单独复制一套 GT 扫描逻辑；后续 `follow` 也优先沿着这条路线做
+
+## 2026-04-21：让 nextgen runtime 的敌对刷怪驱逐真正生效
+
+### 已完成
+- 新增 `MonsterRepellentServiceTest`，覆盖“仅注册 runtime-only nextgen bot、开启 repel 后，怪物刷怪事件会被真正拒绝”的回归场景
+- 将 `MonsterRepellentService` 的判定源从 legacy `FakePlayerRegistry.getAll()` 改为在线 `BotRuntimeView` 列表：按 `runtime.repel().repelling()`、`runtime.repel().repelRange()` 与 `runtime.entity().asPlayer()` 的当前位置进行统一计算
+- 确认 `repel` 不再只是 facade 状态切换；nextgen runtime-only bot 现在也能通过 Forge `LivingSpawnEvent.CheckSpawn` 真实拦截敌对刷怪
+- 重新通过 `MonsterRepellentServiceTest` 以及相关 `FakePlayerManagerServiceTest`、`CommandPlayerTest` 回归
+
+### 遇到的问题
+- `NextGenRepelRuntime` 之前虽然能记录“是否开启驱逐”和驱逐半径，但全局刷怪事件仍只遍历 legacy 假人实体表，导致 nextgen bot 完全没有机会参与判定
+
+### 做出的决定
+- 继续优先把“状态壳但无真实行为”的 nextgen 服务逐个接回事件或 tick 链路；`repel` 已完成后，后续重点转向 `follow / monitor`
+
+## 2026-04-21：补齐 nextgen runtime 的 tick 驱动、权限链路与背包/ServerUtilities 兼容
+
+### 已完成
+- 为 `GTstaffForgePlayer` 补上 `onUpdate() -> runBaseUpdate() -> actionPack.onUpdate() -> onLivingUpdate()` 的 nextgen 动作逐 tick 驱动，并新增 `GTstaffForgePlayerTest` 回归覆盖执行顺序
+- 引入 `PlayerVisualSync` 运行时无关接口，让 `PlayerActionPack`、`FeedbackSync`、`FakePlayerClientUseCompat` 对 legacy `FakePlayer` 与 nextgen `GTstaffForgePlayer` 共用装备同步与挥手动画广播
+- 将 `PermissionHelper` 与 `CommandPlayer` / `FakePlayerManagerService` 的多处权限校验改为 runtime-neutral，runtime-only bot 现在也能正确按 owner / OP 策略判定
+- 将 `ServerUtilitiesCompat.isFakePlayer(...)` 扩展到识别 `GTstaffForgePlayer`，避免 nextgen bot 在 `ServerUtilities` 侧重新被当成真实玩家
+- 将 `FakePlayerInventoryView`、`FakePlayerInventoryContainer`、`FakePlayerInventoryGuiHandler` 从 legacy `FakePlayer` 入参改为可承载任意 GTstaff bot 实体，runtime-only nextgen bot 的 `inventory open` 现已能解析并打开服务端容器
+- 新增并通过 `ServerUtilitiesCompatTest`、`FakePlayerInventoryContainerTest`、`FakePlayerInventoryGuiHandlerTest`，并重新通过一轮更宽的 nextgen 回归集
+
+### 遇到的问题
+- `CommandPlayerTest` 中 `TestCommandSender.messages` 未初始化，导致几条命令路由测试在发送聊天消息时空指针；已先修复测试桩，再继续推进业务改动
+- nextgen 背包打开链路真正的阻塞点不在 `NextGenInventoryRuntime.openInventoryManager(...)`，而在 UI handler 和容器签名仍硬绑 `FakePlayer`，导致即使命令层已转到 runtime facade，GUI 依旧只对 legacy 生效
+
+### 做出的决定
+- 这轮优先补“桥接层缺口”而不是继续扩大行为迁移范围：先让 `tick / 权限 / 背包打开 / ServerUtilities` 达到 nextgen 可用，再继续处理 `follow / monitor / repel` 的真实行为平移
+- 背包 GUI 解析继续沿用 `entityId` 作为打开参数，但服务端解析改为遍历 registry 中的在线 `BotRuntimeView`，避免再次写死到 legacy `FakePlayerRegistry.getAll()`
+
+## 2026-04-21：完成 nextgen fake player runtime Wave D implementation plan
+
+### 已完成
+- 基于已批准总 spec 与已落地的 Wave C 状态，编写 Wave D 计划文档：`docs/superpowers/plans/2026-04-21-gtstaff-nextgen-fake-player-runtime-wave-d.md`
+- 将 Wave D 范围明确扩展为“默认切换前的完整闭环”：不仅覆盖 `spawn / shadow / restore / fakePlayerRuntimeMode` 默认值切换，也显式纳入 `BotActionRuntime`，确保 `attack / use / jump / move / look / hotbar / stop` 不会因 nextgen 默认化而降级
+- 在计划中补上 runtime-aware restore / skin rebuild / mixed rollback 的执行顺序，避免开服恢复仍然天然回落到 legacy
+- 完成一轮计划自检：确认没有真正占位段落，也没有再遗漏 `handleManipulation(...)` 这条 legacy-only 动作链
+
+### 遇到的问题
+- Wave C 完成后，`spawn / shadow / restore` 虽然还没切到 nextgen，但更关键的阻塞其实是 `handleManipulation(...)` 仍只认 legacy `FakePlayer`；如果照最初的保守想法只切创建链，默认 runtime 改成 `nextgen` 后动作命令会直接功能降级
+
+### 做出的决定
+- Wave D 计划不再采用“只切 spawn/restore”的窄版本，而是按总 spec 要求把 `BotActionRuntime`、生命周期工厂、restore scheduler 和 rollback 一并纳入默认切换范围
+- 这一轮仍然不计划删除 legacy 实现，只做“nextgen 默认启用 + legacy/mixed 明确可回退”的切换闭环
+
+---
+
+## 2026-04-21：完成 nextgen fake player runtime Wave C 业务服务 facade 迁移
+
+### 已完成
+- 落地 runtime 服务契约：`BotFollowRuntime`、`BotMonitorRuntime`、`BotRepelRuntime`、`BotInventoryRuntime`、`BotInventorySummary`，并将 `BotRuntimeView` 扩展为统一暴露四类业务服务入口
+- 为 legacy 假人补齐 `LegacyFollowRuntime`、`LegacyMonitorRuntime`、`LegacyRepelRuntime`、`LegacyInventoryRuntime`，`LegacyBotHandle` 现可完整承载 monitor / repel / inventory / follow 的 facade 读写
+- 为 `FakePlayerRegistry` 新增在线 `BotRuntimeView` 注册与查询能力：`registerRuntime(...)`、`getRuntimeView(...)`、runtime-first 的 `getBotHandle(...)` / `getAllBotHandles()`，为后续 nextgen 在线 bot 接线准备好 registry 入口
+- `FakePlayerManagerService` 现已改为通过 runtime facade 处理 bot 列表、inventory 摘要、monitor、repel、follow 与 inventory manager 打开逻辑；无在线 runtime 时才回退到离线快照描述
+- `CommandPlayer` 的 `monitor / repel / inventory / follow` 子命令已改走 runtime facade，runtime-only bot 也能走命令层状态读写；`handleManipulation(...)` 仍保持 legacy `FakePlayer` 动作链
+- 将 `NextGenBotRuntime` 的匿名占位实现替换为正式 service shell：`NextGenFollowRuntime`、`NextGenMonitorRuntime`、`NextGenRepelRuntime`、`NextGenInventoryRuntime`
+- 新增并通过 Wave C 回归测试：`NextGenBotRuntimeServicesTest`、`CommandPlayerTest`、`FakePlayerManagerServiceTest`、`FakePlayerRegistryTest`、`LegacyBotHandleServicesTest`、`LegacyBotHandleTest`、`BotSessionTest`
+- 通过 Wave C 验证命令：`./gradlew.bat --offline --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true test --tests com.andgatech.gtstaff.fakeplayer.runtime.NextGenBotRuntimeServicesTest --tests com.andgatech.gtstaff.fakeplayer.runtime.BotSessionTest --tests com.andgatech.gtstaff.command.CommandPlayerTest --tests com.andgatech.gtstaff.ui.FakePlayerManagerServiceTest --tests com.andgatech.gtstaff.fakeplayer.FakePlayerRegistryTest --tests com.andgatech.gtstaff.fakeplayer.runtime.LegacyBotHandleServicesTest --tests com.andgatech.gtstaff.fakeplayer.runtime.LegacyBotHandleTest`
+
+### 遇到的问题
+- `CommandPlayer.handleFollow(...)` 里的中文提示文本在 PowerShell 默认代码页下显示成乱码，最初导致补丁匹配错位；最终改为按 UTF-8 读取源码并分段修正，避免把 follow 逻辑误插到 monitor 分支
+- 现有 `FakePlayerRegistry` 原本只跟踪 `FakePlayer` 实体，无法让 runtime-only bot 出现在 manager/command/runtime 查询路径中；本轮顺手补齐了在线 runtime registry，才使 Wave C 的 facade 迁移真正闭环
+
+### 做出的决定
+- Wave C 到此为止只完成“业务服务 facade 化 + nextgen 状态壳”，默认 runtime 继续保持 `legacy`，不提前切换 `spawn / shadow / restore` 等创建链
+- `CommandPlayer.handleManipulation(...)`、动作执行链和真实 nextgen 行为驱动仍留给后续 Wave D/更后续阶段处理，本轮重点是让命令/UI/registry 不再被 `FakePlayer` 类型直接绑死
+
+---
+
+## 2026-04-21：完成 nextgen fake player runtime Wave C implementation plan
+
+### 已完成
+- 基于总 spec 的 Wave C 边界，编写实现计划：`docs/superpowers/plans/2026-04-21-gtstaff-nextgen-fake-player-runtime-wave-c.md`
+- 将 Wave C 范围明确限制为业务服务层迁移：`follow / monitor / repel / inventory / UI manager` 改走 runtime facade，不提前切默认 runtime，也不把 `spawn / shadow / restore` 拉进本轮
+- 计划中已拆出 `BotFollowRuntime`、`BotMonitorRuntime`、`BotRepelRuntime`、`BotInventoryRuntime`、`BotInventorySummary` 等运行时服务接口，以及 `Legacy*Runtime` / `NextGen*Runtime` 适配与状态壳
+- 计划中已为 `FakePlayerManagerService`、`CommandPlayer`、`LegacyBotHandle`、`NextGenBotRuntime`、相关回归测试与三份项目文档更新分别给出 TDD 步骤、验证命令与提交切片
+
+### 遇到的问题
+- 当前代码里 `CommandPlayer` 与 `FakePlayerManagerService` 对 `FakePlayer` 直连较深，尤其是 monitor / repel / inventory / follow 的读写路径分散，因此 Wave C 计划必须先把 runtime service contract 立住，再迁命令和 UI，否则后续 nextgen 很容易再次被 legacy 细节反向拖住
+
+### 做出的决定
+- Wave C 继续遵守“双轨迁移”节奏：动作链保持 Wave B 结果不动，业务服务先 facade 化，默认 runtime 保持 `legacy`
+- `handleManipulation(...)` 这类动作命令本轮仍显式保留在 legacy `FakePlayer` 路径，避免把 Wave D 的默认切换风险提前卷入 Wave C
+
+---
+
+## 2026-04-20：完成 nextgen fake player runtime Wave B 动作链迁移
+
+### 已完成
+- 编写 Wave B implementation plan：`docs/superpowers/plans/2026-04-20-gtstaff-nextgen-fake-player-runtime-wave-b.md`
+- 新增 `fakeplayer.action` 分层：`TargetingService` / `TargetingResult`、`UseExecutor` / `UseResult`、`AttackExecutor` / `AttackResult`、`FeedbackSync`
+- `PlayerActionPack` 现已把目标选择、使用执行、攻击执行与挥手反馈分别委托到独立执行边界，同时保留现有 `performBlockActivationUse(...)`、`performDirectItemUse(...)`、`performClientUseBridge(...)`、`performEntityAttack(...)`、`attackBlock(...)` 等兼容 hook
+- 新增默认关闭的 `ActionDiagnostics` 与配置项 `fakePlayerActionDiagnostics`，用于在需要时记录 fake player 的 use/attack 执行结果，而不改变默认行为
+- 新增并通过 Wave B 回归测试：`TargetingServiceTest`、`UseExecutorTest`、`AttackExecutorTest`，并再次通过 `PlayerActionPackTest`、`CommandPlayerTest`、`FakePlayerRegistryTest`、`LegacyBotHandleTest`、`BotSessionTest`
+- 通过 Wave B 验证命令：`./gradlew.bat --offline --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true test --tests com.andgatech.gtstaff.fakeplayer.action.TargetingServiceTest --tests com.andgatech.gtstaff.fakeplayer.action.UseExecutorTest --tests com.andgatech.gtstaff.fakeplayer.action.AttackExecutorTest --tests com.andgatech.gtstaff.fakeplayer.PlayerActionPackTest --tests com.andgatech.gtstaff.command.CommandPlayerTest --tests com.andgatech.gtstaff.fakeplayer.FakePlayerRegistryTest --tests com.andgatech.gtstaff.fakeplayer.runtime.LegacyBotHandleTest --tests com.andgatech.gtstaff.fakeplayer.runtime.BotSessionTest`
+
+### 遇到的问题
+- 诊断日志初版在调用点提前读取 `player.getCommandSenderName()`，即使 `fakePlayerActionDiagnostics=false` 也会让测试桩触发空指针；最终改为把 `EntityPlayerMP` 直接传入 `ActionDiagnostics`，并在配置开关通过后才解析 bot 名称
+- `log.md` 在终端输出里仍会因为 PowerShell 当前代码页显示成乱码，但文件本身继续按 UTF-8 维护；本轮没有把日志内容回退成错误编码
+
+### 做出的决定
+- Wave B 只做 legacy 动作链的内部解耦与诊断补点，不提前切换默认 runtime，也不在这轮直接接入 nextgen 实体执行
+- `PlayerActionPack` 的重构继续采用“外层抽象 + 内层保留 legacy hook”的迁移策略，优先保证现有客户端兼容桥、攻击 fallback 和动作反馈行为不回退
+
+---
+
+
+## 2026-04-20：完成 nextgen fake player runtime Wave A 运行时解耦骨架
+
+### 已完成
+- 新增运行时抽象层 `BotRuntimeType`、`BotHandle`、`BotRuntimeView`、`BotEntityBridge`，并为现有 `FakePlayer` 落地 `LegacyBotHandle`
+- 为 `FakePlayerRegistry` 增加 `RuntimeType` / `SnapshotVersion` 元数据持久化、旧存档默认回落到 `LEGACY` 的兼容逻辑，以及 `getBotHandle(...)` / `getAllBotHandles()` 只读查询入口
+- 新增 inert 的 nextgen skeleton：`GTstaffForgePlayer`、`BotSession`、`NextGenBotRuntime`，但默认运行时仍保持 `legacy`
+- `Config` 新增 `fakePlayerRuntimeMode`，`CommandPlayer.handleList(...)` 改为通过 runtime handle 读取 bot 名称，现有 legacy 行为不变
+- 通过 Wave A 验证命令：`./gradlew.bat --offline --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true test --tests com.andgatech.gtstaff.command.CommandPlayerTest --tests com.andgatech.gtstaff.fakeplayer.FakePlayerRegistryTest --tests com.andgatech.gtstaff.fakeplayer.runtime.LegacyBotHandleTest --tests com.andgatech.gtstaff.fakeplayer.runtime.BotSessionTest`
+
+### 遇到的问题
+- 新建 worktree 初次运行 Gradle 时触发 Git `dubious ownership` 噪音；已通过将该 worktree 加入 `safe.directory` 消除，避免后续测试输出被污染
+- `net.minecraftforge.common.util.FakePlayer` 继承链中的 `mcServer` 为 final，`GTstaffForgePlayer` 不能手动重写该字段；最终改为完全复用 Forge `FakePlayer(WorldServer, GameProfile)` 既有初始化逻辑
+
+### 做出的决定
+- Wave A 只引入运行时解耦层、registry 元数据和 nextgen 空壳，不切默认 runtime，也不提前迁移动作链
+- 命令层当前仅把 `/player list` 这类只读查询切到 runtime handle，其他需要真实实体操作的路径继续保持 legacy `FakePlayer` 直连
+
+---
 
 ## 2026-04-20：完成 nextgen fake player runtime Wave A implementation plan
 
@@ -856,3 +1412,82 @@
 - 将“进游戏手点 `/gtstaff ui`、Spawn/Look/Inventory 子窗口”的最终人工 smoke test 单独保留为后续事项，而不阻塞当前开发收尾
 
 ---
+## 2026-04-21：推进 nextgen fake player runtime Wave D 生命周期与命令接线
+
+### 已完成
+- 为 nextgen fake player 补齐 `NextGenActionRuntime`、`GTstaffForgePlayer` 自持 `PlayerActionPack`、`NextGenBotFactory.spawn/restore`
+- 新增 `BotRuntimeMode` 与 `BotLifecycleManager`，并让 `FakePlayerRegistry` / `FakePlayerRestoreScheduler` 支持 `BotRuntimeView` 级别的 runtime-aware 恢复
+- `CommandPlayer.handleSpawn(...)` 与 `handleManipulation(...)` 已切到 lifecycle/action facade，runtime-only bot 也能走 `attack/use/jump/move/look/hotbar/stop`
+- 通过定向离线验证：`NextGenBotFactoryTest`、`NextGenBotRuntimeServicesTest`、`BotSessionTest`、`BotLifecycleManagerTest`、`FakePlayerRegistryTest`、`FakePlayerRestoreSchedulerTest`、`CommandPlayerTest`
+
+### 遇到的问题
+- GTNH Gradle 在线解析仍会因 TLS/metadata 失败卡住，当前验证必须固定走带 `--offline` 与禁 buildscript update 的命令
+- 新增 runtime-aware restore 入口后，`restorePersisted(...)` 的 lambda 重载出现二义性；最终改为单独命名 `restorePersistedRuntimes(...)`
+
+### 做出的决定
+- 先完成 spawn/manipulation 与 restore 生命周期切换，再继续补 `shadow` 与默认 `fakePlayerRuntimeMode=nextgen` 的最终切换
+## 2026-04-21：收口 nextgen fake player runtime Wave D 默认切换
+
+### 已完成
+- 完成 `NextGenBotFactory.shadow(...)`、`BotLifecycleManager.shadow(...)` 与 `BotLifecycleManager.kill(...)`，让 nextgen runtime 覆盖 `shadow / kill / spawn / restore` 全生命周期关键路径
+- `CommandPlayer` 已改为通过 lifecycle facade 处理 `shadow` 与 runtime-only bot 的 `kill`，并新增可覆写的 `resolvePlayer(...)`，避免命令层再次绑死全局 legacy 取人逻辑
+- `PermissionHelper.cantSpawn(...)` 改为基于 `FakePlayerRegistry.contains(...)` 拦截 runtime-only 假人的重名创建；`Config.fakePlayerRuntimeMode` 默认值正式切到 `nextgen`，并通过 `BotRuntimeMode` 统一归一化
+- 新增并通过 `NextGenBotFactoryTest`、`BotLifecycleManagerTest`、`CommandPlayerTest`、`PermissionHelperTest`、`ConfigTest` 对应回归，确认 `shadow / kill / duplicate-name / default-runtime` 路径可用
+- 补跑 Wave D 扩大回归：`LegacyBotHandleActionTest`、`LegacyBotHandleServicesTest`、`NextGenBotFactoryTest`、`NextGenBotRuntimeServicesTest`、`BotLifecycleManagerTest`、`BotSessionTest`、`FakePlayerRegistryTest`、`FakePlayerRestoreSchedulerTest`、`FakePlayerSkinRestoreSchedulerTest`、`CommandPlayerTest`、`FakePlayerManagerServiceTest`、`PermissionHelperTest`、`ConfigTest`
+- 执行离线 `assemble`，确认最新产物为 `build/libs/gtstaff-v1.0.2.jar`、`build/libs/gtstaff-v1.0.2-dev.jar`、`build/libs/gtstaff-v1.0.2-sources.jar`
+
+### 遇到的问题
+- `CommandPlayer.handleShadow(...)` 之前仍通过 `CommandBase.getPlayer(...)` 直接依赖全局 `MinecraftServer.getServer()`，在测试和后续 runtime-neutral 演进里都不稳定；本轮改为 `resolvePlayer(...)` 封装后收口
+- `Config` 的 `fakePlayerRuntimeMode` 首次创建配置文件时，不能再通过 `configuration.getCategory(...).get(...)` 取属性并回写，否则在空配置场景会出现空指针；已改成直接持有 `Property`
+- `NextGenBotFactory.shadow(...)` 复制源玩家状态时，测试桩的 `DataWatcher` 不完整会导致 `getHealth()/isSneaking()/isSprinting()` 空指针；已加防御性保护，避免 nextgen shadow 因不完整外部状态崩溃
+
+### 做出的决定
+- Wave D 在这轮正式完成默认切换闭环：`fakePlayerRuntimeMode=nextgen`、`legacy/mixed` 继续保留，且命令/UI/restore/registry 都已有回退路径
+- `ConfigTest` 对“默认值为 nextgen”的校验改为稳定的源码断言，避免被其他测试对静态配置字段的污染误伤
+
+---
+## 2026-04-21：完成 nextgen runtime 迁移范围审计
+
+### 已完成
+- 对照当前源码重新核对 `nextgen` 迁移范围，区分“命令/接口已切换”和“真实行为已落地”
+- 确认 `spawn / shadow / restore / kill / manipulation command routing` 已迁到 runtime-neutral 主链，`fakePlayerRuntimeMode` 默认值也已切到 `nextgen`
+- 确认 `follow / monitor / repel / inventory` 在 `nextgen` 下目前主要是 service state shell：命令与 UI 可读写状态，但真实跟随、监控扫描、敌对生物驱逐与完整背包 GUI 仍未完整平移
+- 确认 `ServerUtilitiesCompat`、部分权限校验与动作反馈仍带有 legacy `FakePlayer` 类型依赖，不能算“全量迁完”
+
+### 遇到的问题
+- `context.md` 里仍残留少量旧描述，例如配置默认值一处还写成 `legacy`，如果只看文档会高估迁移完成度
+- `NextGenBotRuntimeServicesTest` 当前验证重点是 service state 可变与 inventory summary，可证明 facade 通了，但还不足以证明 nextgen 的真实业务行为与 legacy 等价
+
+### 做出的决定
+- 后续再谈“nextgen 全量迁移完成”时，必须以真实行为闭环为准，不能只以 facade 接线和状态读写通过作为完成标准
+- 这轮审计结论将同步写入 `context.md` 与 `ToDOLIST.md`，避免后续继续把 state shell 误记为 fully migrated
+
+---
+## 2026-04-21：补齐 nextgen bot 的服务端 respawn 兼容链
+
+### 已完成
+- 调整 `ServerConfigurationManagerMixin`：当 `respawnPlayer(...)` 的来源实体是 nextgen `GTstaffForgePlayer` 时，重生实体不再回退成原版 `EntityPlayerMP`，而是继续保留 GTstaff fake-player 身份
+- 调整 `EntityPlayerMP_RespawnMixin`：nextgen bot 在 `clonePlayer(...)` 之后会重新绑定 `NextGenBotRuntime`，并复制 owner、monitor、repel、follow 等运行时状态，再重新注册回 `FakePlayerRegistry`
+- 新增 `RespawnMixinsTest`，覆盖 nextgen respawn 构造分支选择与 clone 后 runtime/service-state 回绑场景
+- 重新通过 `RespawnMixinsTest`、`GTstaffForgePlayerTest`、`BotLifecycleManagerTest`、`FakePlayerRegistryTest`、`NextGenBotFactoryTest`、`FakePlayerRestoreSchedulerTest` 与 `CommandPlayerTest`
+
+### 遇到的问题
+- `net.minecraftforge.common.util.FakePlayer` 构造函数在纯 JUnit 环境里会触发 `FMLCommonHandler` 初始化，直接 new `GTstaffForgePlayer` 的单测桩不稳定
+
+### 做出的决定
+- 将 `ServerConfigurationManagerMixin` 的 nextgen respawn 构造动作抽成包级测试钩子，仅在测试中替换为轻量 stub；生产逻辑保持原本真实构造路径不变
+## 2026-04-22：修复假人饰品栏服务端写回绕过 Baubles 校验
+
+### 已完成
+- 根据你提供的 `PacketSyncBauble` 崩溃栈重新核对 `Baubles-Expanded-master` 与当前 GTstaff 写回链，确认根因不是客户端图标或槽位显示，而是服务端 `FakePlayerInventoryExtraSlot.setStack(...)` 直接写透传到底层 `IInventory.setInventorySlotContents(...)`，绕过了 `InventoryBaubles.isItemValidForSlot(...)`
+- 新增 `FakePlayerInventoryViewTest.serverExtraSlotWriteThroughRespectsUnderlyingValidation()`，先锁定“后端 inventory 明确拒绝该物品时，假人额外槽不应继续写入”的红灯
+- `FakePlayerInventoryExtraSlot` 现在在有后端 `IInventory` 时，会先调用 `isItemValidForSlot(...)`；若物品非法则直接拒绝写入，不再把非 `IBauble` 物品下沉到 Baubles 同步包链路
+- `FakePlayerInventoryView.setInventorySlotContents(...)` 也补了一层额外槽合法性校验，避免容器或其他调用路径再次绕过附加槽限制
+- 修正测试夹具 `TestInventory` 的 `final` 继承问题后，重新通过 `FakePlayerInventoryCompatTest`、`FakePlayerInventoryContainerTest`、`FakePlayerInventoryViewTest`、`FakePlayerInventoryGuiHandlerTest`、`FakePlayerManagerServiceTest`
+- 重新离线打包 `v1.0.2`，最新主 jar 时间戳更新到 2026-04-22 00:24
+
+### 遇到的问题
+- 上一轮只补了客户端无后端 inventory 的假槽校验，真实服务端 Baubles 写回路径仍可能被直接调用，因此像 Forestry 背包这类普通物品依旧会进入 `InventoryBaubles.func_70299_a(...)` 并触发 `ClassCastException`
+
+### 做出的决定
+- 继续保留客户端预校验，但真正的兜底以服务端底层 `IInventory.isItemValidForSlot(...)` 为准；只要后端 inventory 拒绝，该物品就绝不再进入同步包链路

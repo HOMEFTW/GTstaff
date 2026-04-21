@@ -3,6 +3,9 @@ package com.andgatech.gtstaff.config;
 import java.io.File;
 
 import net.minecraftforge.common.config.Configuration;
+import net.minecraftforge.common.config.Property;
+
+import com.andgatech.gtstaff.fakeplayer.runtime.BotRuntimeMode;
 
 public class Config {
 
@@ -15,6 +18,8 @@ public class Config {
     public static int maxBotsPerPlayer = 10;
     public static int maxBotsTotal = 20;
     public static int defaultMonitorRange = 16;
+    public static String fakePlayerRuntimeMode = "nextgen";
+    public static boolean fakePlayerActionDiagnostics = false;
     // endregion
 
     public static void synchronizeConfiguration(File configFile) {
@@ -43,6 +48,19 @@ public class Config {
             1,
             64,
             "Default GT machine monitoring range.");
+        Property fakePlayerRuntimeModeProperty = configuration.get(
+            "fakePlayerRuntimeMode",
+            FAKE_PLAYER,
+            fakePlayerRuntimeMode,
+            "Default fake-player runtime mode: legacy, nextgen, mixed.");
+        fakePlayerRuntimeMode = BotRuntimeMode.fromConfig(fakePlayerRuntimeModeProperty.getString())
+            .configValue();
+        fakePlayerRuntimeModeProperty.set(fakePlayerRuntimeMode);
+        fakePlayerActionDiagnostics = configuration.getBoolean(
+            "fakePlayerActionDiagnostics",
+            FAKE_PLAYER,
+            fakePlayerActionDiagnostics,
+            "Enable lightweight fake-player attack/use diagnostics in the server log.");
 
         if (configuration.hasChanged()) {
             configuration.save();

@@ -1,10 +1,49 @@
 ﻿# TODO 列表
 
 ## 当前计划
-- [ ] 选择 nextgen fake player runtime Wave A 的执行方式：`subagent-driven` 或 `inline`
-- [ ] 为 GTstaff 假人背包管理界面接入 Baubles Expanded 饰品栏支持：在现有统一背包容器中合并展示并编辑假人的饰品槽，槽位数量、类型与滚动布局跟随 Baubles Expanded 当前配置
+- [ ] 完成 nextgen 迁移最终人工烟测：重点验证游戏内 `purge`、恢复后补皮重建、OpenBlocks/TST 联动与 mixed/legacy 回退
 
 ## 已完成
+- [x] 修复假人饰品栏“手动可放任意物品 + Shift-click 吞物品”问题：`FakePlayerExtraSlot` 现在会显式复用附加槽合法性校验，额外槽 Shift 合并也改为自定义受限逻辑，不再绕过 `isItemValid(...)`；已重新离线打包 `gtstaff-v1.0.2.jar` 到 2026-04-22 00:38
+- [x] 修复假人饰品栏服务端写回绕过 Baubles 校验：额外槽现在会在服务端写透传前尊重底层 `IInventory.isItemValidForSlot(...)`，普通物品不会再被写进 Baubles 后端触发 `PacketSyncBauble` `ClassCastException`；并已重新离线打包 `gtstaff-v1.0.2.jar` 到 2026-04-22 00:24
+- [x] 为假人饰品栏补齐物品放置限制：客户端 Baubles 槽不再接受普通物品，只有实现 Bauble 接口且类型匹配当前 `slotType` 的饰品才允许放入
+- [x] 重新打包当前 `v1.0.2` jar：离线执行 `assemble`，确认 `gtstaff-v1.0.2.jar`、`gtstaff-v1.0.2-dev.jar`、`gtstaff-v1.0.2-sources.jar` 已更新到 2026-04-22 00:11
+- [x] 将假人攻击兜底正脸范围从约 30 度放宽到 45 度：视线略偏侧前方但仍在正面锥形内的实体现在也会被攻击 fallback 选中
+- [x] 移除假人背包里的问号饰品槽位：Baubles `unknownType` 槽不再显示在 GTstaff 管理背包中，避免往问号槽里放物品时触发客户端闪退
+- [x] 恢复假人背包空饰品槽与盔甲槽图标：Baubles 空槽会按 `slotType` 显示原模组的戒指/护符等内部图标，盔甲槽也会显示原版头盔/胸甲/护腿/靴子提示图标
+- [x] 恢复假人管理背包的饰品栏与副手栏布局：Baubles 饰品槽重新显示在右侧独立面板并支持滚动，Backhand 副手槽回到装备区，普通假人背包与玩家背包位置不再被附加槽下推
+- [x] 修复假人丢物品后的手持物残影：`drop` / `dropStack` 现在会在服务端丢出物品后立即同步假人当前手持装备，避免客户端继续渲染已不存在的物品
+- [x] 迁移假人背包管理界面的饰品栏与副手槽：统一容器现在会在基础 40 槽后追加 Baubles Expanded 饰品槽与 Backhand 副手槽，支持点击编辑、Shift-click 互传、动态 GUI 高度与无硬依赖反射兼容
+- [x] 收窄假人攻击兜底实体扫描范围：`TargetingService.resolveForAttack()` 现在只会在正脸约 30 度锥形范围内选择兜底实体，不再从身侧大范围自动索敌
+- [x] 修复假人 `USE` 频率档位只触发一次的问题：`PlayerActionPack` 现在会逐 tick 递减 `itemUseCooldown`，`use continuous` 与 `use interval <ticks>` 可在冷却结束后继续执行
+- [x] 修复 nextgen 假人 creative 能力位导致仍然无敌的问题：`GTstaffForgePlayer.attackEntityFrom(...)` 现在会临时绕过 `capabilities.disableDamage` 的原版玩家受伤拦截，调用结束后恢复原能力状态
+- [x] 修复假人攻击指令在精确射线未命中时只空挥手、不伤害实体的问题：`ATTACK` 现在会在近战范围内兜底选择最近可碰撞实体，确保命令式假人攻击能进入实体伤害链
+- [x] 修复 nextgen 假人无法受伤/无法通过玩家目标攻击检查的问题：`GTstaffForgePlayer` 现已覆盖 Forge `FakePlayer` 默认的永久无敌与禁止攻击玩家目标语义，在线 nextgen bot 可正常参与伤害链
+- [x] 修复 `EntityPlayerMP_RespawnMixin` 启动期 `InvalidMixinException`：将 respawn 相关包级 `static` helper 从 mixin 本体抽到独立 `RespawnMixinHooks`，避免 Sponge Mixin 因非私有静态方法拒绝应用 mixin
+- [x] 重新打包当前 `v1.0.2` jar：离线执行 `assemble`，确认 `build/libs/gtstaff-v1.0.2.jar`、`build/libs/gtstaff-v1.0.2-dev.jar`、`build/libs/gtstaff-v1.0.2-sources.jar` 已按本轮清理后的代码重新生成
+- [x] 清理 nextgen 迁移剩余的命令/UI legacy-only helper：删除 `CommandPlayer` 中已失效的 legacy `purge` fallback、`requireFakePlayer(...)`、`requireActionPack(...)` 与 `formatArmorSummary(...)`，并删除 `FakePlayerManagerService` 中未使用的 `findBot(...)` / `findBotOrThrow(...)`
+- [x] 补齐 nextgen 重启恢复后的异步补皮重建链：`FakePlayerRestoreScheduler` / `FakePlayerSkinRestoreScheduler` / `BotLifecycleManager` / `NextGenBotFactory` 现已统一按 `BotRuntimeView` 调度恢复后补皮，nextgen bot 重建时会保留 monitor/follow/repel 等运行时状态并安全替换在线 runtime
+- [x] 补齐 nextgen bot 的服务端 respawn 兼容链：`ServerConfigurationManagerMixin` / `EntityPlayerMP_RespawnMixin` 现已在 respawn 后保留 `GTstaffForgePlayer` 身份，并重新回绑 runtime 与 monitor/follow/repel 等状态
+- [x] 清理 nextgen runtime 覆盖 legacy 时的陈旧 registry 索引：`FakePlayerRegistry.registerRuntimeInternal(...)` 现在会在注册非 legacy runtime 时主动移除同名 `fakePlayers` 旧引用
+- [x] 补齐 nextgen bot 的 `FakeNetHandlerPlayServer` 下线链：duplicate-login / idle kick 现在会对 `GTstaffForgePlayer` 执行 `disconnected + unregister + playerLoggedOut + setDead`，不再只对 legacy 假人生效
+- [x] 统一 `shadow` 命令的 nextgen fake-player 防护：`CommandPlayer.handleShadow(...)` 已复用 `ServerUtilitiesCompat.isFakePlayer(...)`，nextgen `GTstaffForgePlayer` 不会再被误当成真人去 shadow
+- [x] 统一 restore scheduler 与 knockback 的 GTstaff fake-player 识别：集成服恢复等待与 knockback 标记现已复用 `ServerUtilitiesCompat.isFakePlayer(...)`，nextgen `GTstaffForgePlayer` 不再被当成真实玩家
+- [x] 补齐 nextgen bot 的自然死亡/显式下线语义：`GTstaffForgePlayer` 已支持死亡后自动复活，`BotLifecycleManager.kill(...)` 也会先标记 `disconnected`，避免 `kill/purge` 被自动复活逻辑反向拉活
+- [x] 补齐 nextgen `purge` 清理链路并压稳恢复态回归测试：`CommandPlayer.handlePurge(...)` 已优先走 `BotRuntimeView` + `BotLifecycleManager.kill(...)`，同时按在线 runtime 实体的真实 `GameProfile` UUID 清理 `playerdata/stats`，`BotLifecycleManagerTest` 也已显式锁定 nextgen restore 路径
+- [x] 让 nextgen runtime 复用真实 `FollowService`：`NextGenFollowRuntime` 已接回 legacy 跟随/跨维度/重试逻辑，停止跟随的移动清理也已 runtime-neutral 化
+- [x] 让 nextgen runtime 的 `monitor` 真正接回扫描与提醒链路：`scanNow()`、runtime services phase 与 `MachineMonitorService` 的 runtime-neutral tick/scan 已落地
+- [x] 让 nextgen runtime-only bot 的 `repel` 真正接入刷怪事件：`MonsterRepellentService` 已改为读取在线 `BotRuntimeView`，不再只认 legacy 假人实体表
+- [x] 补齐 nextgen runtime 的第一批运行时缺口：完成 `GTstaffForgePlayer` 动作逐 tick 驱动、runtime-neutral 权限校验、`ServerUtilities compat` nextgen 识别与 `inventory open` 的 runtime-only 打通
+- [x] 完成 nextgen runtime 迁移范围审计：确认 `spawn / shadow / restore / kill / manipulation routing` 已切到 runtime-neutral，但 `follow / monitor / repel / inventory open / ServerUtilities compat / 部分权限校验` 仍未完成真实行为平移
+- [x] 完成 nextgen fake player runtime Wave D 默认切换闭环：补齐 `shadow / kill / duplicate-name / default runtime` 到 runtime-neutral 主链，保留 `legacy / mixed` 回退，并重新打包 `gtstaff-v1.0.2.jar`
+- [x] 推进 nextgen fake player runtime Wave D 第一轮落地：完成 nextgen action-capable runtime、runtime-aware restore/scheduler 与 `CommandPlayer` 的 `spawn / manipulation` 接线
+- [x] 编写 nextgen fake player runtime Wave D implementation plan：保存到 `docs/superpowers/plans/2026-04-21-gtstaff-nextgen-fake-player-runtime-wave-d.md`
+- [x] 完成 nextgen fake player runtime Wave C：将 `follow / monitor / repel / inventory / UI manager` 迁到 runtime facade，并为 `NextGenBotRuntime` 补齐对应服务状态壳
+- [x] 编写 nextgen fake player runtime Wave C implementation plan：保存到 `docs/superpowers/plans/2026-04-21-gtstaff-nextgen-fake-player-runtime-wave-c.md`
+- [x] 完成 nextgen fake player runtime Wave B 动作链迁移：为 legacy 动作链引入 `TargetingService`、`UseExecutor`、`AttackExecutor`、`FeedbackSync` 与默认关闭的 `ActionDiagnostics`，在不切换默认 runtime 的前提下完成 Wave B 分层
+- [x] 编写 nextgen fake player runtime Wave B implementation plan：保存到 `docs/superpowers/plans/2026-04-20-gtstaff-nextgen-fake-player-runtime-wave-b.md`
+- [x] 完成 nextgen fake player runtime Wave A 运行时解耦骨架：新增 runtime 抽象层、registry runtime 元数据、nextgen inert skeleton、`fakePlayerRuntimeMode` 配置项，并确认 legacy 默认行为保持不变
+- [x] 选择 nextgen fake player runtime Wave A 的执行方式：采用 `inline` 在隔离 worktree 中直接落地实现
 - [x] 编写 nextgen fake player runtime Wave A implementation plan：保存到 `docs/superpowers/plans/2026-04-20-gtstaff-nextgen-fake-player-runtime-wave-a.md`
 - [x] 审阅并确认 `docs/superpowers/specs/2026-04-20-gtstaff-nextgen-fake-player-runtime-design.md`，确认后进入 implementation plan 阶段
 - [x] 为 GTstaff 编写并提交 nextgen fake player runtime 重构设计 spec：明确以 Forge `FakePlayer` 语义为核心、双轨迁移、全量功能平移、不接受降级的总体方案

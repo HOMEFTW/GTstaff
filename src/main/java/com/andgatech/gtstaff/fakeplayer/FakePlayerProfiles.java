@@ -7,7 +7,7 @@ import net.minecraft.entity.player.EntityPlayer;
 import com.andgatech.gtstaff.integration.SkinPortCompat;
 import com.mojang.authlib.GameProfile;
 
-final class FakePlayerProfiles {
+public final class FakePlayerProfiles {
 
     @FunctionalInterface
     interface ProfileResolver {
@@ -21,7 +21,7 @@ final class FakePlayerProfiles {
 
     private FakePlayerProfiles() {}
 
-    static GameProfile createSpawnProfile(String username) {
+    public static GameProfile createSpawnProfile(String username) {
         String safeUsername = username == null ? "" : username;
         Optional<GameProfile> resolvedProfile = resolveSkinProfile(safeUsername);
         if (resolvedProfile.isPresent()) {
@@ -30,7 +30,7 @@ final class FakePlayerProfiles {
         return new GameProfile(EntityPlayer.func_146094_a(new GameProfile(null, safeUsername)), safeUsername);
     }
 
-    static Optional<GameProfile> resolveSkinProfile(String username) {
+    public static Optional<GameProfile> resolveSkinProfile(String username) {
         String safeUsername = username == null ? "" : username;
         Optional<GameProfile> resolvedProfile = resolver.resolve(safeUsername);
         if (!resolvedProfile.isPresent()) {
@@ -43,11 +43,11 @@ final class FakePlayerProfiles {
         resolver = testResolver == null ? DEFAULT_RESOLVER : testResolver;
     }
 
-    static GameProfile copyOf(GameProfile profile) {
+    public static GameProfile copyOf(GameProfile profile) {
         return copyOf(profile, profile == null ? null : profile.getName());
     }
 
-    static GameProfile copyOf(GameProfile profile, String name) {
+    public static GameProfile copyOf(GameProfile profile, String name) {
         if (profile == null) {
             return null;
         }

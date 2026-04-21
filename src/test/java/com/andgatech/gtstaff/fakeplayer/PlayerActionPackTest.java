@@ -25,6 +25,8 @@ import net.minecraft.world.WorldSettings;
 
 import org.junit.jupiter.api.Test;
 
+import com.andgatech.gtstaff.config.Config;
+
 class PlayerActionPackTest {
 
     @Test
@@ -69,6 +71,16 @@ class PlayerActionPackTest {
     }
 
     @Test
+    void setSlotSyncsEquipmentForVisualSyncPlayers() {
+        VisualSyncPlayer player = stubPlayer(VisualSyncPlayer.class);
+        PlayerActionPack pack = new PlayerActionPack(player);
+
+        pack.setSlot(4);
+
+        assertEquals(1, player.syncEquipmentCalls);
+    }
+
+    @Test
     void dropItemActionsUseCorrectDropMode() {
         StubPlayer player = stubPlayer();
         PlayerActionPack pack = new PlayerActionPack(player);
@@ -81,6 +93,18 @@ class PlayerActionPackTest {
         assertEquals(2, player.dropCalls);
         assertEquals(Boolean.FALSE, player.dropModes[0]);
         assertEquals(Boolean.TRUE, player.dropModes[1]);
+    }
+
+    @Test
+    void dropItemActionsSyncHeldItemForVisualSyncPlayers() {
+        VisualSyncPlayer player = stubPlayer(VisualSyncPlayer.class);
+        PlayerActionPack pack = new PlayerActionPack(player);
+
+        pack.start(ActionType.DROP_STACK, Action.once());
+        pack.onUpdate();
+
+        assertEquals(1, player.getDropCalls());
+        assertEquals(1, player.syncEquipmentCalls);
     }
 
     @Test
@@ -144,6 +168,21 @@ class PlayerActionPackTest {
         assertEquals(1, pack.bridgeUseCalls);
         assertTrue(pack.bridgeSawBlockUsed);
         assertFalse(pack.bridgeSawItemUsed);
+    }
+
+    @Test
+    void intervalUseRepeatsAfterCooldownExpires() {
+        StubPlayer player = stubPlayer();
+        BridgeAwarePack pack = new BridgeAwarePack(player);
+        pack.target = new MovingObjectPosition(1, 2, 3, 1, Vec3.createVectorHelper(1.5D, 2.5D, 3.5D));
+        pack.blockActivationResult = true;
+        pack.start(ActionType.USE, Action.interval(5));
+
+        for (int tick = 0; tick < 6; tick++) {
+            pack.onUpdate();
+        }
+
+        assertEquals(2, pack.blockActivationCalls);
     }
 
     @Test
@@ -220,6 +259,48 @@ class PlayerActionPackTest {
     }
 
     @Test
+    void attackWithoutTargetBroadcastsSwingForVisualSyncPlayers() {
+        VisualSyncPlayer player = stubPlayer(VisualSyncPlayer.class);
+        ExposedAttackPack pack = new ExposedAttackPack(player);
+
+        assertTrue(pack.attackWithoutTarget());
+        assertEquals(1, player.getSwingItemCalls());
+        assertEquals(1, player.swingAnimationCalls);
+    }
+
+    @Test
+    void attackFallsBackToNearbyEntityWhenPreciseRayMisses() {
+        StubPlayer player = stubPlayer();
+        StubWorld world = allocate(StubWorld.class);
+        setField(Entity.class, player, "worldObj", world);
+        player.posX = 0.0D;
+        player.posY = 0.0D;
+        player.posZ = 0.0D;
+        player.rotationYaw = 0.0F;
+        player.rotationPitch = 0.0F;
+        setField(
+            Entity.class,
+            player,
+            "boundingBox",
+            AxisAlignedBB.getBoundingBox(-0.3D, 0.0D, -0.3D, 0.3D, 1.8D, 0.3D));
+
+        DamageTrackingEntity target = new DamageTrackingEntity();
+        setField(Entity.class, target, "worldObj", world);
+        setField(
+            Entity.class,
+            target,
+            "boundingBox",
+            AxisAlignedBB.getBoundingBox(0.7D, 0.0D, 1.7D, 1.3D, 1.8D, 2.3D));
+        world.entities = java.util.Collections.<Entity>singletonList(target);
+
+        PlayerActionPack pack = new PlayerActionPack(player);
+        pack.start(ActionType.ATTACK, Action.once());
+        pack.onUpdate();
+
+        assertEquals(1, target.damageCalls);
+    }
+
+    @Test
     void useWithoutAnyInteractionStillSwings() {
         StubPlayer player = stubPlayer();
         VisualFeedbackPack pack = new VisualFeedbackPack(player);
@@ -261,6 +342,11 @@ class PlayerActionPackTest {
         assertTrue(pack.performAttack(new MovingObjectPosition(target, Vec3.createVectorHelper(0.0D, 0.0D, 0.0D))));
         assertTrue(target.getHealth() < 20.0F);
         assertEquals(0, target.damageCalls);
+    }
+
+    @Test
+    void diagnosticsDisabledByDefault() {
+        assertFalse(Config.fakePlayerActionDiagnostics);
     }
 
     private static StubPlayer stubPlayer() {
@@ -332,6 +418,7 @@ class PlayerActionPackTest {
 
     private static final class BridgeAwarePack extends PlayerActionPack {
 
+        private MovingObjectPosition target;
         private boolean blockActivationResult;
         private boolean directItemUseResult;
         private boolean bridgeUseResult;
@@ -343,6 +430,11 @@ class PlayerActionPackTest {
 
         private BridgeAwarePack(EntityPlayerMP player) {
             super(player);
+        }
+
+        @Override
+        protected MovingObjectPosition getTarget() {
+            return target;
         }
 
         @Override
@@ -410,6 +502,17 @@ class PlayerActionPackTest {
         protected void performSwingAnimation() {}
     }
 
+    private static final class ExposedAttackPack extends PlayerActionPack {
+
+        private ExposedAttackPack(EntityPlayerMP player) {
+            super(player);
+        }
+
+        private boolean attackWithoutTarget() {
+            return performAttack(null);
+        }
+    }
+
     private static class StubPlayer extends EntityPlayerMP {
 
         private boolean sneakingState;
@@ -418,6 +521,7 @@ class PlayerActionPackTest {
         private int dropCalls;
         private Boolean lastDropAll;
         private Boolean[] dropModes;
+        private int swingItemCalls;
 
         private StubPlayer() {
             super(null, null, null, (ItemInWorldManager) null);
@@ -447,10 +551,39 @@ class PlayerActionPackTest {
         }
 
         @Override
+        public void swingItem() {
+            swingItemCalls++;
+        }
+
+        protected int getSwingItemCalls() {
+            return swingItemCalls;
+        }
+
+        protected int getDropCalls() {
+            return dropCalls;
+        }
+
+        @Override
         public void attackTargetEntityWithCurrentItem(Entity targetEntity) {}
 
         @Override
         public void sendContainerToPlayer(Container container) {}
+    }
+
+    private static final class VisualSyncPlayer extends StubPlayer implements PlayerVisualSync {
+
+        private int syncEquipmentCalls;
+        private int swingAnimationCalls;
+
+        @Override
+        public void syncEquipmentToWatchers() {
+            syncEquipmentCalls++;
+        }
+
+        @Override
+        public void broadcastSwingAnimation() {
+            swingAnimationCalls++;
+        }
     }
 
     private static final class VelocityOnlyAttackPlayer extends StubPlayer {
@@ -535,6 +668,11 @@ class PlayerActionPackTest {
             lastDamage = amount;
             lastDamageSource = source;
             velocityChanged = true;
+            return true;
+        }
+
+        @Override
+        public boolean canBeCollidedWith() {
             return true;
         }
 

@@ -26,23 +26,33 @@ import net.minecraft.world.WorldServer;
 import net.minecraft.world.WorldSettings;
 import net.minecraftforge.common.DimensionManager;
 
-import com.andgatech.gtstaff.GTstaff;
 import com.andgatech.gtstaff.config.Config;
 import com.andgatech.gtstaff.fakeplayer.Action;
 import com.andgatech.gtstaff.fakeplayer.ActionType;
-import com.andgatech.gtstaff.fakeplayer.FakeNetHandlerPlayServer;
 import com.andgatech.gtstaff.fakeplayer.FakePlayer;
 import com.andgatech.gtstaff.fakeplayer.FakePlayerRegistry;
-import com.andgatech.gtstaff.fakeplayer.FollowService;
-import com.andgatech.gtstaff.fakeplayer.IFakePlayerHolder;
-import com.andgatech.gtstaff.fakeplayer.MachineMonitorService;
-import com.andgatech.gtstaff.fakeplayer.PlayerActionPack;
-import com.andgatech.gtstaff.ui.FakePlayerInventoryGuiIds;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotActionRuntime;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotFollowRuntime;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotHandle;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotInventorySummary;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotLifecycleManager;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotRuntimeView;
+import com.andgatech.gtstaff.integration.ServerUtilitiesCompat;
 import com.andgatech.gtstaff.util.PermissionHelper;
 import com.andgatech.gtstaff.util.PlayerDataCleanup;
 import com.mojang.authlib.GameProfile;
 
 public class CommandPlayer extends CommandBase {
+
+    private final BotLifecycleManager lifecycleManager;
+
+    public CommandPlayer() {
+        this(new BotLifecycleManager());
+    }
+
+    CommandPlayer(BotLifecycleManager lifecycleManager) {
+        this.lifecycleManager = lifecycleManager == null ? new BotLifecycleManager() : lifecycleManager;
+    }
 
     @Override
     public String getCommandName() {
@@ -115,10 +125,9 @@ public class CommandPlayer extends CommandBase {
             return;
         }
 
-        String botNames = FakePlayerRegistry.getAll()
-            .values()
+        String botNames = FakePlayerRegistry.getAllBotHandles()
             .stream()
-            .map(FakePlayer::getCommandSenderName)
+            .map(BotHandle::name)
             .sorted(String.CASE_INSENSITIVE_ORDER)
             .collect(Collectors.joining(", "));
         notifySender(sender, "Fake players (" + FakePlayerRegistry.getCount() + "): " + botNames);
@@ -173,7 +182,8 @@ public class CommandPlayer extends CommandBase {
                 .getGameType();
         }
 
-        FakePlayer fakePlayer = FakePlayer.createFake(
+        UUID ownerUUID = sender instanceof EntityPlayerMP player ? player.getUniqueID() : null;
+        BotRuntimeView runtime = lifecycleManager.spawn(
             botName,
             server,
             options.position,
@@ -181,43 +191,37 @@ public class CommandPlayer extends CommandBase {
             options.pitch,
             options.dimension,
             options.gameType,
-            options.flying);
-
-        if (sender instanceof EntityPlayerMP player) {
-            FakePlayerRegistry.register(fakePlayer, player.getUniqueID());
-        }
+            options.flying,
+            ownerUUID);
 
         notifySender(
             sender,
-            "Spawned fake player " + fakePlayer.getCommandSenderName() + " at " + formatPosition(fakePlayer));
+            "Spawned fake player " + runtime.name() + " at " + formatPosition(runtime.entity().asPlayer()));
     }
 
     protected void handleKill(ICommandSender sender, String botName) {
-        FakePlayer target = requireFakePlayer(botName);
-        if (PermissionHelper.cantRemove(sender, target)) {
+        BotRuntimeView runtime = requireOnlineRuntime(botName);
+        if (PermissionHelper.cantRemove(sender, runtime)) {
             throw new CommandException("You do not have permission to remove that bot");
         }
-
-        if (target.playerNetServerHandler instanceof FakeNetHandlerPlayServer) {
-            target.playerNetServerHandler.kickPlayerFromServer("You logged in from another location");
-        } else {
-            FakePlayerRegistry.unregister(target.getCommandSenderName());
+        if (!lifecycleManager.kill(botName)) {
+            throw new CommandException("Fake player not found: " + botName);
         }
-        notifySender(sender, "Killed fake player " + target.getCommandSenderName());
+        notifySender(sender, "Killed fake player " + runtime.name());
     }
 
     protected void handlePurge(ICommandSender sender, String botName) {
-        FakePlayer target = FakePlayerRegistry.getFakePlayer(botName);
-        if (target != null) {
-            String targetName = target.getCommandSenderName();
-            UUID profileId = resolveProfileId(targetName, target);
-            if (PermissionHelper.cantRemove(sender, target)) {
+        BotRuntimeView runtime = FakePlayerRegistry.getRuntimeView(botName);
+        if (runtime != null) {
+            String targetName = runtime.name();
+            EntityPlayerMP player = runtime.entity() == null ? null : runtime.entity()
+                .asPlayer();
+            UUID profileId = resolveProfileId(targetName, player);
+            if (PermissionHelper.cantRemove(sender, runtime)) {
                 throw new CommandException("You do not have permission to remove that bot");
             }
-            if (target.playerNetServerHandler instanceof FakeNetHandlerPlayServer) {
-                target.playerNetServerHandler.kickPlayerFromServer("You logged in from another location");
-            } else {
-                FakePlayerRegistry.unregister(targetName);
+            if (!lifecycleManager.kill(targetName)) {
+                throw new CommandException("Fake player not found: " + targetName);
             }
             purgeSavedPlayerFiles(requireServer(), targetName, profileId);
             FakePlayerRegistry.saveServerRegistry(requireServer());
@@ -241,11 +245,11 @@ public class CommandPlayer extends CommandBase {
 
     protected void handleShadow(ICommandSender sender, String botName) {
         MinecraftServer server = requireServer();
-        EntityPlayerMP realPlayer = getPlayer(sender, botName);
-        if (realPlayer instanceof FakePlayer) {
+        EntityPlayerMP realPlayer = resolvePlayer(sender, botName);
+        if (ServerUtilitiesCompat.isFakePlayer(realPlayer)) {
             throw new CommandException("Target is already a fake player");
         }
-        if (FakePlayerRegistry.getFakePlayer(botName) != null) {
+        if (FakePlayerRegistry.contains(botName)) {
             throw new CommandException("Fake player already exists");
         }
         if (FakePlayerRegistry.getCount() >= Config.maxBotsTotal) {
@@ -258,22 +262,21 @@ public class CommandPlayer extends CommandBase {
             throw new CommandException("Player bot limit reached");
         }
 
-        FakePlayer shadow = FakePlayer.createShadow(server, realPlayer);
+        BotRuntimeView shadow = lifecycleManager.shadow(server, realPlayer);
         if (shadow == null) {
             throw new CommandException("Unable to create shadow player");
         }
 
-        notifySender(sender, "Created shadow fake player " + shadow.getCommandSenderName());
+        notifySender(sender, "Created shadow fake player " + shadow.name());
     }
 
     protected void handleMonitor(ICommandSender sender, String botName, String[] args) {
-        FakePlayer target = requireFakePlayer(botName);
-        if (PermissionHelper.cantManipulate(sender, target)) {
+        BotRuntimeView runtime = requireOnlineRuntime(botName);
+        if (PermissionHelper.cantManipulate(sender, runtime)) {
             throw new CommandException("You do not have permission to control that bot");
         }
-
         if (args.length == 0) {
-            notifySender(sender, buildMonitorStatus(target));
+            notifySender(sender, buildMonitorStatus(runtime));
             return;
         }
 
@@ -308,29 +311,32 @@ public class CommandPlayer extends CommandBase {
         }
 
         if (monitoring != null) {
-            target.setMonitoring(monitoring);
+            runtime.monitor()
+                .setMonitoring(monitoring);
         }
         if (range != null) {
-            target.setMonitorRange(range);
+            runtime.monitor()
+                .setMonitorRange(range);
         }
         if (interval != null) {
-            target.setReminderInterval(interval);
+            runtime.monitor()
+                .setReminderInterval(interval);
         }
 
-        notifySender(sender, buildMonitorStatus(target));
+        notifySender(sender, buildMonitorStatus(runtime));
         if (scan) {
-            sendMachineOverview(sender, target);
+            sendMachineOverview(sender, runtime);
         }
     }
 
     protected void handleRepel(ICommandSender sender, String botName, String[] args) {
-        FakePlayer target = requireFakePlayer(botName);
-        if (PermissionHelper.cantManipulate(sender, target)) {
+        BotRuntimeView runtime = requireOnlineRuntime(botName);
+        if (PermissionHelper.cantManipulate(sender, runtime)) {
             throw new CommandException("You do not have permission to control that bot");
         }
 
         if (args.length == 0) {
-            notifySender(sender, buildRepelStatus(target));
+            notifySender(sender, buildRepelStatus(runtime));
             return;
         }
 
@@ -355,23 +361,25 @@ public class CommandPlayer extends CommandBase {
         }
 
         if (repelling != null) {
-            target.setMonsterRepelling(repelling);
+            runtime.repel()
+                .setRepelling(repelling);
         }
         if (range != null) {
-            target.setMonsterRepelRange(range);
+            runtime.repel()
+                .setRepelRange(range);
         }
 
-        notifySender(sender, buildRepelStatus(target));
+        notifySender(sender, buildRepelStatus(runtime));
     }
 
     protected void handleInventory(ICommandSender sender, String botName, String[] args) {
-        FakePlayer target = requireFakePlayer(botName);
-        if (PermissionHelper.cantManipulate(sender, target)) {
+        BotRuntimeView runtime = requireOnlineRuntime(botName);
+        if (PermissionHelper.cantManipulate(sender, runtime)) {
             throw new CommandException("You do not have permission to control that bot");
         }
 
         if (args.length == 0 || "summary".equalsIgnoreCase(args[0])) {
-            notifySenderLines(sender, buildInventorySummary(target));
+            notifySenderLines(sender, buildInventorySummary(runtime));
             return;
         }
 
@@ -380,14 +388,8 @@ public class CommandPlayer extends CommandBase {
                 throw new CommandException("Inventory manager can only be opened by a player");
             }
 
-            player.openGui(
-                GTstaff.instance,
-                FakePlayerInventoryGuiIds.FAKE_PLAYER_INVENTORY,
-                player.worldObj,
-                target.getEntityId(),
-                0,
-                0);
-            notifySender(sender, "Opening inventory manager for " + target.getCommandSenderName() + ".");
+            notifySender(sender, runtime.inventory()
+                .openInventoryManager(player));
             return;
         }
 
@@ -395,19 +397,21 @@ public class CommandPlayer extends CommandBase {
     }
 
     protected void handleFollow(ICommandSender sender, String botName, String[] args) {
-        FakePlayer target = requireFakePlayer(botName);
-        if (PermissionHelper.cantManipulate(sender, target)) {
+        BotRuntimeView runtime = requireOnlineRuntime(botName);
+        if (PermissionHelper.cantManipulate(sender, runtime)) {
             throw new CommandException("You do not have permission to control that bot");
         }
-
-        FollowService followService = target.getFollowService();
+        EntityPlayerMP runtimePlayer = runtime.entity()
+            .asPlayer();
+        BotFollowRuntime followService = runtime.follow();
 
         if (args.length == 0) {
             if (!(sender instanceof EntityPlayerMP player)) {
                 throw new CommandException("Only players can be followed");
             }
-            followService.startFollowing(player.getUniqueID());
-            notifySender(sender, FakePlayer.colorizeName(target.getCommandSenderName()) + " 开始跟随你");
+            runtime.follow()
+                .startFollowing(player.getUniqueID());
+            notifySender(sender, FakePlayer.colorizeName(runtime.name()) + " 开始跟随你");
             return;
         }
 
@@ -415,10 +419,12 @@ public class CommandPlayer extends CommandBase {
         switch (subCommand) {
             case "stop":
                 followService.stop();
-                target.moveForward = 0.0F;
-                target.moveStrafing = 0.0F;
-                target.setJumping(false);
-                notifySender(sender, FakePlayer.colorizeName(target.getCommandSenderName()) + " 停止跟随");
+                if (runtimePlayer != null) {
+                    runtimePlayer.moveForward = 0.0F;
+                    runtimePlayer.moveStrafing = 0.0F;
+                    runtimePlayer.setJumping(false);
+                }
+                notifySender(sender, FakePlayer.colorizeName(runtime.name()) + " 停止跟随");
                 return;
             case "range":
                 if (args.length != 2) {
@@ -426,7 +432,7 @@ public class CommandPlayer extends CommandBase {
                 }
                 int followRange = parseIntWithMin(sender, args[1], 1);
                 followService.setFollowRange(followRange);
-                notifySender(sender, target.getCommandSenderName() + " 跟随距离设置为 " + followRange + " 格");
+                notifySender(sender, runtime.name() + " 跟随距离设置为 " + followRange + " 格");
                 return;
             case "tprange":
                 if (args.length != 2) {
@@ -434,134 +440,142 @@ public class CommandPlayer extends CommandBase {
                 }
                 int tpRange = parseIntWithMin(sender, args[1], 2);
                 followService.setTeleportRange(tpRange);
-                notifySender(sender, target.getCommandSenderName() + " 传送距离设置为 " + tpRange + " 格");
+                notifySender(sender, runtime.name() + " 传送距离设置为 " + tpRange + " 格");
                 return;
             default:
                 EntityPlayerMP followTarget = getPlayer(sender, args[0]);
                 followService.startFollowing(followTarget.getUniqueID());
                 notifySender(
                     sender,
-                    FakePlayer.colorizeName(target.getCommandSenderName()) + " 开始跟随 "
+                    FakePlayer.colorizeName(runtime.name()) + " 开始跟随 "
                         + followTarget.getCommandSenderName());
                 return;
         }
     }
 
     protected void handleManipulation(ICommandSender sender, String botName, String action, String[] args) {
-        FakePlayer target = requireFakePlayer(botName);
-        if (PermissionHelper.cantManipulate(sender, target)) {
+        BotRuntimeView runtime = requireOnlineRuntime(botName);
+        EntityPlayerMP target = runtime.entity() == null ? null : runtime.entity().asPlayer();
+        if (PermissionHelper.cantManipulate(sender, runtime)) {
             throw new CommandException("You do not have permission to control that bot");
         }
 
-        PlayerActionPack actionPack = requireActionPack(target);
+        BotActionRuntime actionRuntime = runtime.action();
         switch (action.toLowerCase(Locale.ROOT)) {
             case "attack":
-                actionPack.start(ActionType.ATTACK, parseAction(sender, args));
-                notifySender(sender, "Set attack action for " + target.getCommandSenderName());
+                actionRuntime.start(ActionType.ATTACK, parseAction(sender, args));
+                notifySender(sender, "Set attack action for " + runtime.name());
                 return;
             case "use":
-                actionPack.start(ActionType.USE, parseAction(sender, args));
-                notifySender(sender, "Set use action for " + target.getCommandSenderName());
+                actionRuntime.start(ActionType.USE, parseAction(sender, args));
+                notifySender(sender, "Set use action for " + runtime.name());
                 return;
             case "stopattack":
-                actionPack.stop(ActionType.ATTACK);
-                notifySender(sender, "Stopped attack for " + target.getCommandSenderName());
+                actionRuntime.stop(ActionType.ATTACK);
+                notifySender(sender, "Stopped attack for " + runtime.name());
                 return;
             case "stopuse":
-                actionPack.stop(ActionType.USE);
-                notifySender(sender, "Stopped use for " + target.getCommandSenderName());
+                actionRuntime.stop(ActionType.USE);
+                notifySender(sender, "Stopped use for " + runtime.name());
                 return;
             case "jump":
-                actionPack.start(ActionType.JUMP, parseAction(sender, args));
-                notifySender(sender, "Set jump action for " + target.getCommandSenderName());
+                actionRuntime.start(ActionType.JUMP, parseAction(sender, args));
+                notifySender(sender, "Set jump action for " + runtime.name());
                 return;
             case "drop":
-                actionPack.start(ActionType.DROP_ITEM, parseAction(sender, args));
-                notifySender(sender, "Set drop action for " + target.getCommandSenderName());
+                actionRuntime.start(ActionType.DROP_ITEM, parseAction(sender, args));
+                notifySender(sender, "Set drop action for " + runtime.name());
                 return;
             case "dropstack":
-                actionPack.start(ActionType.DROP_STACK, parseAction(sender, args));
-                notifySender(sender, "Set dropStack action for " + target.getCommandSenderName());
+                actionRuntime.start(ActionType.DROP_STACK, parseAction(sender, args));
+                notifySender(sender, "Set dropStack action for " + runtime.name());
                 return;
             case "move":
-                handleMove(sender, target, actionPack, args);
+                handleMove(sender, runtime, actionRuntime, args);
                 return;
             case "look":
-                handleLook(sender, target, actionPack, args);
+                handleLook(sender, runtime, target, actionRuntime, args);
                 return;
             case "turn":
-                handleTurn(sender, target, actionPack, args);
+                handleTurn(sender, runtime, actionRuntime, args);
                 return;
             case "sneak":
-                actionPack.setSneaking(true);
-                notifySender(sender, target.getCommandSenderName() + " is now sneaking");
+                actionRuntime.setSneaking(true);
+                notifySender(sender, runtime.name() + " is now sneaking");
                 return;
             case "unsneak":
-                actionPack.setSneaking(false);
-                notifySender(sender, target.getCommandSenderName() + " stopped sneaking");
+                actionRuntime.setSneaking(false);
+                notifySender(sender, runtime.name() + " stopped sneaking");
                 return;
             case "sprint":
-                actionPack.setSprinting(true);
-                notifySender(sender, target.getCommandSenderName() + " is now sprinting");
+                actionRuntime.setSprinting(true);
+                notifySender(sender, runtime.name() + " is now sprinting");
                 return;
             case "unsprint":
-                actionPack.setSprinting(false);
-                notifySender(sender, target.getCommandSenderName() + " stopped sprinting");
+                actionRuntime.setSprinting(false);
+                notifySender(sender, runtime.name() + " stopped sprinting");
                 return;
             case "mount":
+                if (target == null) {
+                    throw new CommandException("Fake player entity is unavailable");
+                }
                 handleMount(sender, target, args);
                 return;
             case "dismount":
-                target.mountEntity((Entity) null);
-                notifySender(sender, target.getCommandSenderName() + " dismounted");
+                actionRuntime.dismount();
+                notifySender(sender, runtime.name() + " dismounted");
                 return;
             case "hotbar":
                 if (args.length != 1) {
                     throw new WrongUsageException("/player <name> hotbar <1-9>");
                 }
-                actionPack.setSlot(parseIntBounded(sender, args[0], 1, 9));
-                notifySender(sender, target.getCommandSenderName() + " switched hotbar slot");
+                actionRuntime.setSlot(parseIntBounded(sender, args[0], 1, 9));
+                notifySender(sender, runtime.name() + " switched hotbar slot");
                 return;
             case "stop":
-                actionPack.stopAll();
-                notifySender(sender, target.getCommandSenderName() + " stopped all actions");
+                actionRuntime.stopAll();
+                notifySender(sender, runtime.name() + " stopped all actions");
                 return;
             default:
                 throw new WrongUsageException(getCommandUsage(sender));
         }
     }
 
-    private void handleMove(ICommandSender sender, FakePlayer target, PlayerActionPack actionPack, String[] args) {
+    private void handleMove(ICommandSender sender, BotRuntimeView runtime, BotActionRuntime actionRuntime, String[] args) {
         if (args.length != 1) {
             throw new WrongUsageException("/player <name> move [forward|backward|left|right|stop]");
         }
 
-        actionPack.setForward(0.0F);
-        actionPack.setStrafing(0.0F);
+        actionRuntime.setForward(0.0F);
+        actionRuntime.setStrafing(0.0F);
         switch (args[0].toLowerCase(Locale.ROOT)) {
             case "forward":
-                actionPack.setForward(1.0F);
+                actionRuntime.setForward(1.0F);
                 break;
             case "backward":
-                actionPack.setForward(-1.0F);
+                actionRuntime.setForward(-1.0F);
                 break;
             case "left":
-                actionPack.setStrafing(1.0F);
+                actionRuntime.setStrafing(1.0F);
                 break;
             case "right":
-                actionPack.setStrafing(-1.0F);
+                actionRuntime.setStrafing(-1.0F);
                 break;
             case "stop":
-                actionPack.stopMovement();
+                actionRuntime.stopMovement();
                 break;
             default:
                 throw new WrongUsageException("/player <name> move [forward|backward|left|right|stop]");
         }
 
-        notifySender(sender, "Updated movement for " + target.getCommandSenderName());
+        notifySender(sender, "Updated movement for " + runtime.name());
     }
 
-    private void handleLook(ICommandSender sender, FakePlayer target, PlayerActionPack actionPack, String[] args) {
+    private void handleLook(ICommandSender sender, BotRuntimeView runtime, EntityPlayerMP target,
+        BotActionRuntime actionRuntime, String[] args) {
+        if (target == null) {
+            throw new CommandException("Fake player entity is unavailable");
+        }
         if (args.length == 0) {
             throw new WrongUsageException("/player <name> look <north|south|east|west|up|down|at <x> <y> <z>>");
         }
@@ -569,37 +583,37 @@ public class CommandPlayer extends CommandBase {
         String token = args[0].toLowerCase(Locale.ROOT);
         switch (token) {
             case "north":
-                actionPack.look(180.0F, 0.0F);
+                actionRuntime.look(180.0F, 0.0F);
                 break;
             case "south":
-                actionPack.look(0.0F, 0.0F);
+                actionRuntime.look(0.0F, 0.0F);
                 break;
             case "east":
-                actionPack.look(-90.0F, 0.0F);
+                actionRuntime.look(-90.0F, 0.0F);
                 break;
             case "west":
-                actionPack.look(90.0F, 0.0F);
+                actionRuntime.look(90.0F, 0.0F);
                 break;
             case "up":
-                actionPack.look(target.rotationYaw, -90.0F);
+                actionRuntime.look(target.rotationYaw, -90.0F);
                 break;
             case "down":
-                actionPack.look(target.rotationYaw, 90.0F);
+                actionRuntime.look(target.rotationYaw, 90.0F);
                 break;
             case "at":
                 if (args.length != 4) {
                     throw new WrongUsageException("/player <name> look at <x> <y> <z>");
                 }
-                lookAt(sender, target, actionPack, args[1], args[2], args[3]);
+                lookAt(sender, target, actionRuntime, args[1], args[2], args[3]);
                 break;
             default:
                 throw new WrongUsageException("/player <name> look <north|south|east|west|up|down|at <x> <y> <z>>");
         }
 
-        notifySender(sender, "Updated look direction for " + target.getCommandSenderName());
+        notifySender(sender, "Updated look direction for " + runtime.name());
     }
 
-    private void handleTurn(ICommandSender sender, FakePlayer target, PlayerActionPack actionPack, String[] args) {
+    private void handleTurn(ICommandSender sender, BotRuntimeView runtime, BotActionRuntime actionRuntime, String[] args) {
         if (args.length == 0 || args.length > 2) {
             throw new WrongUsageException("/player <name> turn <left|right|back|<yaw> [pitch]>");
         }
@@ -607,25 +621,25 @@ public class CommandPlayer extends CommandBase {
         String token = args[0].toLowerCase(Locale.ROOT);
         switch (token) {
             case "left":
-                actionPack.turn(-90.0F, 0.0F);
+                actionRuntime.turn(-90.0F, 0.0F);
                 break;
             case "right":
-                actionPack.turn(90.0F, 0.0F);
+                actionRuntime.turn(90.0F, 0.0F);
                 break;
             case "back":
-                actionPack.turn(180.0F, 0.0F);
+                actionRuntime.turn(180.0F, 0.0F);
                 break;
             default:
                 float yaw = (float) parseDouble(sender, args[0]);
                 float pitch = args.length == 2 ? (float) parseDouble(sender, args[1]) : 0.0F;
-                actionPack.turn(yaw, pitch);
+                actionRuntime.turn(yaw, pitch);
                 break;
         }
 
-        notifySender(sender, "Turned " + target.getCommandSenderName());
+        notifySender(sender, "Turned " + runtime.name());
     }
 
-    private void handleMount(ICommandSender sender, FakePlayer target, String[] args) {
+    private void handleMount(ICommandSender sender, EntityPlayerMP target, String[] args) {
         boolean allowAnything = args.length == 1 && "anything".equalsIgnoreCase(args[0]);
         if (args.length > 1 || (args.length == 1 && !allowAnything)) {
             throw new WrongUsageException("/player <name> mount [anything]");
@@ -649,8 +663,8 @@ public class CommandPlayer extends CommandBase {
         throw new CommandException("No nearby entity to mount");
     }
 
-    private void lookAt(ICommandSender sender, FakePlayer target, PlayerActionPack actionPack, String xArg, String yArg,
-        String zArg) {
+    private void lookAt(ICommandSender sender, EntityPlayerMP target, BotActionRuntime actionRuntime, String xArg,
+        String yArg, String zArg) {
         double x = parseDouble(sender, xArg);
         double y = parseDouble(sender, yArg);
         double z = parseDouble(sender, zArg);
@@ -660,7 +674,7 @@ public class CommandPlayer extends CommandBase {
         double horizontal = Math.sqrt(dx * dx + dz * dz);
         float yaw = (float) (Math.atan2(-dx, dz) * 180.0D / Math.PI);
         float pitch = (float) (-(Math.atan2(dy, horizontal) * 180.0D / Math.PI));
-        actionPack.look(yaw, pitch);
+        actionRuntime.look(yaw, pitch);
     }
 
     private Action parseAction(ICommandSender sender, String[] args) {
@@ -676,19 +690,12 @@ public class CommandPlayer extends CommandBase {
         throw new WrongUsageException("[once|continuous|interval <ticks>]");
     }
 
-    private FakePlayer requireFakePlayer(String botName) {
-        FakePlayer target = FakePlayerRegistry.getFakePlayer(botName);
-        if (target == null) {
+    private BotRuntimeView requireOnlineRuntime(String botName) {
+        BotRuntimeView runtime = FakePlayerRegistry.getRuntimeView(botName);
+        if (runtime == null) {
             throw new CommandException("Fake player not found: " + botName);
         }
-        return target;
-    }
-
-    private PlayerActionPack requireActionPack(FakePlayer target) {
-        if (!(target instanceof IFakePlayerHolder holder) || holder.getActionPack() == null) {
-            throw new CommandException("Action pack is unavailable for " + target.getCommandSenderName());
-        }
-        return holder.getActionPack();
+        return runtime;
     }
 
     private boolean cantRemovePersisted(ICommandSender sender, String botName) {
@@ -708,7 +715,7 @@ public class CommandPlayer extends CommandBase {
         }
     }
 
-    private UUID resolveProfileId(String botName, FakePlayer target) {
+    private UUID resolveProfileId(String botName, EntityPlayerMP target) {
         if (target != null && target.getGameProfile() != null
             && target.getGameProfile()
                 .getId() != null) {
@@ -764,7 +771,7 @@ public class CommandPlayer extends CommandBase {
         return parent == null && server != null ? server.getFile(".") : parent;
     }
 
-    private MinecraftServer requireServer() {
+    protected MinecraftServer requireServer() {
         MinecraftServer server = MinecraftServer.getServer();
         if (server == null) {
             throw new CommandException("Server is not available");
@@ -772,7 +779,7 @@ public class CommandPlayer extends CommandBase {
         return server;
     }
 
-    private WorldServer resolveWorld(MinecraftServer server, int dimension) {
+    protected WorldServer resolveWorld(MinecraftServer server, int dimension) {
         WorldServer world = server.worldServerForDimension(dimension);
         if (world == null) {
             world = server.worldServerForDimension(0);
@@ -781,6 +788,10 @@ public class CommandPlayer extends CommandBase {
             throw new CommandException("Unable to resolve target world");
         }
         return world;
+    }
+
+    protected EntityPlayerMP resolvePlayer(ICommandSender sender, String name) {
+        return getPlayer(sender, name);
     }
 
     private void ensureRemaining(String[] args, int index, int requiredValues, ICommandSender sender) {
@@ -813,7 +824,7 @@ public class CommandPlayer extends CommandBase {
             .equals(target.getUniqueID());
     }
 
-    private void notifySender(ICommandSender sender, String message) {
+    protected void notifySender(ICommandSender sender, String message) {
         if (sender != null) {
             sender.addChatMessage(new ChatComponentText("[GTstaff] " + message));
         }
@@ -833,56 +844,72 @@ public class CommandPlayer extends CommandBase {
         }
     }
 
-    private String buildMonitorStatus(FakePlayer target) {
-        return "Monitor for " + target.getCommandSenderName()
+    private String buildMonitorStatus(BotRuntimeView runtime) {
+        return "Monitor for " + runtime.name()
             + ": "
-            + (target.isMonitoring() ? "on" : "off")
+            + (runtime.monitor()
+                .monitoring() ? "on" : "off")
             + ", range="
-            + target.getMonitorRange()
+            + runtime.monitor()
+                .monitorRange()
             + ", interval="
-            + target.getReminderInterval()
+            + runtime.monitor()
+                .reminderInterval()
             + " ticks";
     }
 
-    private String buildRepelStatus(FakePlayer target) {
-        return "Repel for " + target.getCommandSenderName()
+    private String buildRepelStatus(BotRuntimeView runtime) {
+        return "Repel for " + runtime.name()
             + ": "
-            + (target.isMonsterRepelling() ? "on" : "off")
+            + (runtime.repel()
+                .repelling() ? "on" : "off")
             + ", range="
-            + target.getMonsterRepelRange();
+            + runtime.repel()
+                .repelRange();
     }
 
-    private void sendMachineOverview(ICommandSender sender, FakePlayer target) {
-        MachineMonitorService monitorService = target.getMachineMonitorService();
-        if (monitorService == null) {
-            notifySender(sender, "Monitor service is unavailable for " + target.getCommandSenderName());
+    private void sendMachineOverview(ICommandSender sender, BotRuntimeView runtime) {
+        String overviewMessage = runtime.monitor()
+            .scanNow(runtime.name());
+        if (overviewMessage == null || overviewMessage.trim()
+            .isEmpty()) {
+            notifySender(sender, "Monitor service is unavailable for " + runtime.name());
             return;
         }
-        notifySenderLines(sender, monitorService.buildOverviewMessage(target.getCommandSenderName()));
+        notifySenderLines(sender, overviewMessage);
     }
 
-    private String buildInventorySummary(FakePlayer target) {
+    private String buildInventorySummary(BotRuntimeView runtime) {
+        BotInventorySummary inventorySummary = runtime.inventory()
+            .summary();
         StringBuilder summary = new StringBuilder();
         summary.append("Inventory for ")
-            .append(target.getCommandSenderName())
+            .append(runtime.name())
             .append('\n');
-        if (target.inventory == null) {
+        if (inventorySummary == null) {
             summary.append("Inventory data is unavailable.");
             return summary.toString();
         }
 
         summary.append("Selected hotbar slot: ")
-            .append(MathHelper.clamp_int(target.inventory.currentItem, 0, 8) + 1)
+            .append(MathHelper.clamp_int(inventorySummary.selectedHotbarSlot(), 0, 8) + 1)
             .append('\n');
         summary.append("Hotbar: ")
-            .append(formatInventoryRange(target.inventory.mainInventory, 0, 8))
+            .append(formatSummaryLines(inventorySummary.hotbarLines()))
             .append('\n');
         summary.append("Main: ")
-            .append(formatInventoryRange(target.inventory.mainInventory, 9, target.inventory.mainInventory.length - 1))
+            .append(formatSummaryLines(inventorySummary.mainInventoryLines()))
             .append('\n');
         summary.append("Armor: ")
-            .append(formatArmorSummary(target));
+            .append(formatSummaryLines(inventorySummary.armorLines()));
         return summary.toString();
+    }
+
+    private String formatSummaryLines(List<String> lines) {
+        if (lines == null || lines.isEmpty()) {
+            return "(empty)";
+        }
+        return String.join(", ", lines);
     }
 
     private String formatInventoryRange(net.minecraft.item.ItemStack[] stacks, int start, int end) {
@@ -898,19 +925,6 @@ public class CommandPlayer extends CommandBase {
         return String.join(", ", entries);
     }
 
-    private String formatArmorSummary(FakePlayer target) {
-        if (target.inventory == null || target.inventory.armorInventory == null) {
-            return "(empty)";
-        }
-
-        String[] labels = { "boots", "leggings", "chestplate", "helmet" };
-        List<String> entries = new ArrayList<String>();
-        for (int index = 0; index < labels.length; index++) {
-            entries.add(labels[index] + ":" + formatStack(target.inventory.armorInventory[index]));
-        }
-        return String.join(", ", entries);
-    }
-
     private String formatStack(net.minecraft.item.ItemStack stack) {
         if (stack == null) {
             return "-";
@@ -918,14 +932,17 @@ public class CommandPlayer extends CommandBase {
         return stack.getDisplayName() + " x" + stack.stackSize;
     }
 
-    private String formatPosition(FakePlayer fakePlayer) {
-        return "(" + MathHelper.floor_double(fakePlayer.posX)
+    private String formatPosition(EntityPlayerMP player) {
+        if (player == null) {
+            return "(unknown)";
+        }
+        return "(" + MathHelper.floor_double(player.posX)
             + ", "
-            + MathHelper.floor_double(fakePlayer.posY)
+            + MathHelper.floor_double(player.posY)
             + ", "
-            + MathHelper.floor_double(fakePlayer.posZ)
+            + MathHelper.floor_double(player.posZ)
             + ") dim="
-            + fakePlayer.dimension;
+            + player.dimension;
     }
 
     private static final class SpawnOptions {

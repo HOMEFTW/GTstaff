@@ -10,7 +10,6 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
 
-import com.andgatech.gtstaff.fakeplayer.FakePlayer;
 import com.mojang.authlib.GameProfile;
 
 @Mixin(ServerConfigurationManager.class)
@@ -24,10 +23,11 @@ public abstract class ServerConfigurationManagerMixin {
     private EntityPlayerMP gtstaff$respawnAsFakePlayer(MinecraftServer minecraftServer, WorldServer worldServer,
         GameProfile gameProfile, ItemInWorldManager itemInWorldManager, EntityPlayerMP player, int dimension,
         boolean conqueredEnd) {
-        if (player instanceof FakePlayer) {
-            return new FakePlayer(minecraftServer, worldServer, gameProfile);
-        }
-
-        return new EntityPlayerMP(minecraftServer, worldServer, gameProfile, itemInWorldManager);
+        return RespawnMixinHooks.createRespawnPlayer(
+            minecraftServer,
+            worldServer,
+            gameProfile,
+            itemInWorldManager,
+            player);
     }
 }

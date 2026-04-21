@@ -11,14 +11,14 @@ import net.minecraft.world.WorldServer;
 
 public class FollowService {
 
-    interface ServerProvider {
+    protected interface ServerProvider {
 
         MinecraftServer getServer();
     }
 
-    interface CrossDimensionMover {
+    protected interface CrossDimensionMover {
 
-        boolean move(FakePlayer fakePlayer, EntityPlayerMP target, MinecraftServer server);
+        boolean move(EntityPlayerMP fakePlayer, EntityPlayerMP target, MinecraftServer server);
     }
 
     public static final int DEFAULT_FOLLOW_RANGE = 3;
@@ -33,15 +33,15 @@ public class FollowService {
     private int previousTargetDimension = Integer.MIN_VALUE;
     private boolean pendingCrossDimMessage = false;
 
-    private final FakePlayer fakePlayer;
+    private final EntityPlayerMP fakePlayer;
     private final ServerProvider serverProvider;
     private final CrossDimensionMover crossDimensionMover;
 
-    public FollowService(FakePlayer fakePlayer) {
+    public FollowService(EntityPlayerMP fakePlayer) {
         this(fakePlayer, MinecraftServer::getServer, null);
     }
 
-    FollowService(FakePlayer fakePlayer, ServerProvider serverProvider, CrossDimensionMover crossDimensionMover) {
+    protected FollowService(EntityPlayerMP fakePlayer, ServerProvider serverProvider, CrossDimensionMover crossDimensionMover) {
         this.fakePlayer = fakePlayer;
         this.serverProvider = serverProvider;
         this.crossDimensionMover = crossDimensionMover != null ? crossDimensionMover : this::moveToTargetDimension;
@@ -192,7 +192,7 @@ public class FollowService {
         }
     }
 
-    private boolean moveToTargetDimension(FakePlayer fakePlayer, EntityPlayerMP target, MinecraftServer server) {
+    private boolean moveToTargetDimension(EntityPlayerMP fakePlayer, EntityPlayerMP target, MinecraftServer server) {
         int targetDim = target.dimension;
         WorldServer oldWorld = (WorldServer) fakePlayer.worldObj;
         WorldServer newWorld = server.worldServerForDimension(targetDim);
@@ -229,7 +229,7 @@ public class FollowService {
         }
     }
 
-    private void detachPlayerFromWorld(FakePlayer fakePlayer, WorldServer world) {
+    private void detachPlayerFromWorld(EntityPlayerMP fakePlayer, WorldServer world) {
         if (world == null) {
             return;
         }
@@ -254,7 +254,7 @@ public class FollowService {
         fakePlayer.isDead = false;
     }
 
-    private boolean attachPlayerToWorld(FakePlayer fakePlayer, int targetDimension, WorldServer world,
+    private boolean attachPlayerToWorld(EntityPlayerMP fakePlayer, int targetDimension, WorldServer world,
         ServerConfigurationManager configurationManager, double x, double y, double z) {
         if (world == null) {
             return false;
@@ -298,7 +298,7 @@ public class FollowService {
         return fakePlayer.dimension == targetDimension && fakePlayer.worldObj == world;
     }
 
-    private void rollbackFailedMove(FakePlayer fakePlayer, TeleportSnapshot snapshot,
+    private void rollbackFailedMove(EntityPlayerMP fakePlayer, TeleportSnapshot snapshot,
         ServerConfigurationManager configurationManager) {
         WorldServer currentWorld = fakePlayer.worldObj instanceof WorldServer ? (WorldServer) fakePlayer.worldObj
             : null;
@@ -434,7 +434,7 @@ public class FollowService {
         private final boolean isFlying;
         private final boolean allowFlying;
 
-        private TeleportSnapshot(FakePlayer fakePlayer) {
+        private TeleportSnapshot(EntityPlayerMP fakePlayer) {
             this.dimension = fakePlayer.dimension;
             this.world = fakePlayer.worldObj instanceof WorldServer ? (WorldServer) fakePlayer.worldObj : null;
             this.posX = fakePlayer.posX;
@@ -448,11 +448,11 @@ public class FollowService {
             this.allowFlying = fakePlayer.capabilities != null && fakePlayer.capabilities.allowFlying;
         }
 
-        private static TeleportSnapshot capture(FakePlayer fakePlayer) {
+        private static TeleportSnapshot capture(EntityPlayerMP fakePlayer) {
             return new TeleportSnapshot(fakePlayer);
         }
 
-        private void restore(FakePlayer fakePlayer) {
+        private void restore(EntityPlayerMP fakePlayer) {
             fakePlayer.dimension = dimension;
             if (world != null) {
                 fakePlayer.setWorld(world);

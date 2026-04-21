@@ -15,10 +15,12 @@ import net.minecraft.util.FoodStats;
 import net.minecraft.world.WorldServer;
 import net.minecraft.world.WorldSettings;
 
+import com.andgatech.gtstaff.fakeplayer.runtime.BotRuntimeView;
+import com.andgatech.gtstaff.fakeplayer.runtime.LegacyBotHandle;
 import com.google.common.base.Charsets;
 import com.mojang.authlib.GameProfile;
 
-public class FakePlayer extends EntityPlayerMP {
+public class FakePlayer extends EntityPlayerMP implements PlayerVisualSync {
 
     @FunctionalInterface
     interface RestoreFactory {
@@ -347,6 +349,10 @@ public class FakePlayer extends EntityPlayerMP {
 
     public void setOwnerUUID(UUID ownerUUID) {
         this.ownerUUID = ownerUUID;
+    }
+
+    public BotRuntimeView asRuntimeView() {
+        return new LegacyBotHandle(this);
     }
 
     public boolean isMonitoring() {

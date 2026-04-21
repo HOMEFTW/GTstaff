@@ -9,6 +9,7 @@ import net.minecraft.server.MinecraftServer;
 import com.andgatech.gtstaff.config.Config;
 import com.andgatech.gtstaff.fakeplayer.FakePlayer;
 import com.andgatech.gtstaff.fakeplayer.FakePlayerRegistry;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotHandle;
 
 public class PermissionHelper {
 
@@ -17,7 +18,7 @@ public class PermissionHelper {
             .isEmpty()) {
             return Optional.of("Invalid bot name");
         }
-        if (FakePlayerRegistry.getFakePlayer(botName) != null) {
+        if (FakePlayerRegistry.contains(botName)) {
             return Optional.of("Fake player already exists");
         }
         if (server != null && server.getConfigurationManager() != null
@@ -38,19 +39,27 @@ public class PermissionHelper {
     }
 
     public static boolean cantManipulate(ICommandSender sender, FakePlayer target) {
+        return cantManipulate(sender, target == null ? null : target.asRuntimeView());
+    }
+
+    public static boolean cantManipulate(ICommandSender sender, BotHandle target) {
         if (!(sender instanceof EntityPlayerMP player)) return false;
         if (isOp(player)) return false;
-        if (Config.allowNonOpControlOwnBot && target.getOwnerUUID() != null
-            && target.getOwnerUUID()
+        if (Config.allowNonOpControlOwnBot && target != null && target.ownerUUID() != null
+            && target.ownerUUID()
                 .equals(player.getUniqueID()))
             return false;
         return true;
     }
 
     public static boolean cantRemove(ICommandSender sender, FakePlayer target) {
+        return cantRemove(sender, target == null ? null : target.asRuntimeView());
+    }
+
+    public static boolean cantRemove(ICommandSender sender, BotHandle target) {
         if (!(sender instanceof EntityPlayerMP player)) return false;
         if (isOp(player)) return false;
-        if (target.getOwnerUUID() != null && target.getOwnerUUID()
+        if (target != null && target.ownerUUID() != null && target.ownerUUID()
             .equals(player.getUniqueID())) return false;
         return true;
     }

@@ -9,12 +9,19 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
+import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.nbt.CompressedStreamTools;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.WorldSettings;
 import net.minecraftforge.common.util.Constants;
+
+import com.andgatech.gtstaff.fakeplayer.runtime.BotEntityBridge;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotHandle;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotRuntimeView;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotRuntimeType;
+import com.andgatech.gtstaff.fakeplayer.runtime.LegacyBotHandle;
 
 public class FakePlayerRegistry {
 
@@ -38,14 +45,23 @@ public class FakePlayerRegistry {
     private static final String FOLLOW_TARGET_KEY = "FollowTarget";
     private static final String FOLLOW_RANGE_KEY = "FollowRange";
     private static final String TELEPORT_RANGE_KEY = "TeleportRange";
+    private static final String RUNTIME_TYPE_KEY = "RuntimeType";
+    private static final String SNAPSHOT_VERSION_KEY = "SnapshotVersion";
 
     private static final Map<String, FakePlayer> fakePlayers = new LinkedHashMap<String, FakePlayer>();
+    private static final Map<String, BotRuntimeView> onlineRuntimes = new LinkedHashMap<String, BotRuntimeView>();
     private static final Map<String, PersistedBotData> persistedBots = new LinkedHashMap<String, PersistedBotData>();
 
     @FunctionalInterface
     public interface BotRestorer {
 
         FakePlayer restore(PersistedBotData data);
+    }
+
+    @FunctionalInterface
+    public interface RuntimeRestorer {
+
+        BotRuntimeView restore(PersistedBotData data);
     }
 
     public static final class PersistedBotData {
@@ -69,11 +85,13 @@ public class FakePlayerRegistry {
         private final UUID followTarget;
         private final int followRange;
         private final int teleportRange;
+        private final BotRuntimeType runtimeType;
+        private final int snapshotVersion;
 
         private PersistedBotData(String name, UUID profileId, UUID ownerUUID, int dimension, double posX, double posY,
             double posZ, float yaw, float pitch, int gameTypeId, boolean flying, boolean monitoring, int monitorRange,
             int reminderInterval, boolean monsterRepelling, int monsterRepelRange, UUID followTarget, int followRange,
-            int teleportRange) {
+            int teleportRange, BotRuntimeType runtimeType, int snapshotVersion) {
             this.name = name;
             this.profileId = profileId;
             this.ownerUUID = ownerUUID;
@@ -93,6 +111,8 @@ public class FakePlayerRegistry {
             this.followTarget = followTarget;
             this.followRange = followRange;
             this.teleportRange = teleportRange;
+            this.runtimeType = runtimeType;
+            this.snapshotVersion = snapshotVersion;
         }
 
         public String getName() {
@@ -170,23 +190,156 @@ public class FakePlayerRegistry {
         public int getTeleportRange() {
             return this.teleportRange;
         }
+
+        public BotRuntimeType getRuntimeType() {
+            return this.runtimeType;
+        }
+
+        public int getSnapshotVersion() {
+            return this.snapshotVersion;
+        }
+
+        public static PersistedBotData fromTag(NBTTagCompound bot) {
+            UUID profileId = null;
+            if (bot.hasKey(PROFILE_ID_KEY)) {
+                profileId = UUID.fromString(bot.getString(PROFILE_ID_KEY));
+            }
+
+            UUID owner = null;
+            if (bot.hasKey(OWNER_KEY)) {
+                owner = UUID.fromString(bot.getString(OWNER_KEY));
+            }
+
+            int dimension = bot.hasKey(DIMENSION_KEY) ? bot.getInteger(DIMENSION_KEY) : 0;
+            double posX = bot.hasKey(POS_X_KEY) ? bot.getDouble(POS_X_KEY) : Double.NaN;
+            double posY = bot.hasKey(POS_Y_KEY) ? bot.getDouble(POS_Y_KEY) : Double.NaN;
+            double posZ = bot.hasKey(POS_Z_KEY) ? bot.getDouble(POS_Z_KEY) : Double.NaN;
+            float yaw = bot.hasKey(YAW_KEY) ? bot.getFloat(YAW_KEY) : 0.0F;
+            float pitch = bot.hasKey(PITCH_KEY) ? bot.getFloat(PITCH_KEY) : 0.0F;
+            int gameTypeId = bot.hasKey(GAME_TYPE_KEY) ? bot.getInteger(GAME_TYPE_KEY)
+                : WorldSettings.GameType.SURVIVAL.getID();
+            boolean flying = bot.hasKey(FLYING_KEY) && bot.getBoolean(FLYING_KEY);
+            boolean monitoring = bot.hasKey(MONITORING_KEY) && bot.getBoolean(MONITORING_KEY);
+            int monitorRange = bot.hasKey(MONITOR_RANGE_KEY) ? bot.getInteger(MONITOR_RANGE_KEY) : 16;
+            int reminderInterval = bot.hasKey(REMINDER_INTERVAL_KEY) ? bot.getInteger(REMINDER_INTERVAL_KEY) : 600;
+            boolean monsterRepelling = bot.hasKey(MONSTER_REPELLING_KEY) && bot.getBoolean(MONSTER_REPELLING_KEY);
+            int monsterRepelRange = bot.hasKey(MONSTER_REPEL_RANGE_KEY) ? bot.getInteger(MONSTER_REPEL_RANGE_KEY) : 64;
+            UUID followTarget = null;
+            if (bot.hasKey(FOLLOW_TARGET_KEY)) {
+                followTarget = UUID.fromString(bot.getString(FOLLOW_TARGET_KEY));
+            }
+            int followRange = bot.hasKey(FOLLOW_RANGE_KEY) ? bot.getInteger(FOLLOW_RANGE_KEY)
+                : FollowService.DEFAULT_FOLLOW_RANGE;
+            int teleportRange = bot.hasKey(TELEPORT_RANGE_KEY) ? bot.getInteger(TELEPORT_RANGE_KEY)
+                : FollowService.DEFAULT_TELEPORT_RANGE;
+            BotRuntimeType runtimeType = BotRuntimeType.LEGACY;
+            if (bot.hasKey(RUNTIME_TYPE_KEY, Constants.NBT.TAG_STRING)) {
+                try {
+                    runtimeType = BotRuntimeType.valueOf(bot.getString(RUNTIME_TYPE_KEY).toUpperCase(Locale.ROOT));
+                } catch (IllegalArgumentException ignored) {
+                    runtimeType = BotRuntimeType.LEGACY;
+                }
+            }
+            int snapshotVersion = bot.hasKey(SNAPSHOT_VERSION_KEY, Constants.NBT.TAG_INT)
+                ? bot.getInteger(SNAPSHOT_VERSION_KEY)
+                : 1;
+
+            return new PersistedBotData(
+                bot.getString(NAME_KEY),
+                profileId,
+                owner,
+                dimension,
+                posX,
+                posY,
+                posZ,
+                yaw,
+                pitch,
+                gameTypeId,
+                flying,
+                monitoring,
+                monitorRange,
+                reminderInterval,
+                monsterRepelling,
+                monsterRepelRange,
+                followTarget,
+                followRange,
+                teleportRange,
+                runtimeType,
+                snapshotVersion);
+        }
+    }
+
+    private static final class PersistedBotHandle implements BotHandle {
+
+        private final PersistedBotData data;
+
+        private PersistedBotHandle(PersistedBotData data) {
+            this.data = data;
+        }
+
+        @Override
+        public String name() {
+            return data.getName();
+        }
+
+        @Override
+        public UUID ownerUUID() {
+            return data.getOwnerUUID();
+        }
+
+        @Override
+        public int dimension() {
+            return data.getDimension();
+        }
+
+        @Override
+        public BotRuntimeType runtimeType() {
+            return data.getRuntimeType();
+        }
+
+        @Override
+        public BotEntityBridge entity() {
+            return () -> null;
+        }
     }
 
     public static void register(FakePlayer fakePlayer, UUID ownerUUID) {
         String normalizedName = normalize(fakePlayer.getCommandSenderName());
         fakePlayer.setOwnerUUID(ownerUUID);
         fakePlayers.put(normalizedName, fakePlayer);
+        onlineRuntimes.put(normalizedName, fakePlayer.asRuntimeView());
         persistedBots.put(normalizedName, snapshot(fakePlayer, ownerUUID));
+    }
+
+    public static void registerRuntime(BotRuntimeView runtime) {
+        registerRuntimeInternal(runtime, null);
     }
 
     public static void unregister(String name) {
         String normalizedName = normalize(name);
         fakePlayers.remove(normalizedName);
+        onlineRuntimes.remove(normalizedName);
         persistedBots.remove(normalizedName);
     }
 
     public static FakePlayer getFakePlayer(String name) {
         return fakePlayers.get(normalize(name));
+    }
+
+    public static BotHandle getBotHandle(String name) {
+        BotRuntimeView runtime = getRuntimeView(name);
+        if (runtime != null) {
+            return runtime;
+        }
+        PersistedBotData data = persistedBots.get(normalize(name));
+        if (data == null) {
+            return null;
+        }
+        return new PersistedBotHandle(data);
+    }
+
+    public static BotRuntimeView getRuntimeView(String name) {
+        return onlineRuntimes.get(normalize(name));
     }
 
     public static boolean contains(String name) {
@@ -209,21 +362,24 @@ public class FakePlayerRegistry {
         return fakePlayers;
     }
 
+    public static List<BotHandle> getAllBotHandles() {
+        return new ArrayList<BotHandle>(onlineRuntimes.values());
+    }
+
     public static int getCount() {
-        return fakePlayers.size();
+        return onlineRuntimes.size();
     }
 
     public static int getCountByOwner(UUID ownerUUID) {
-        return (int) fakePlayers.values()
+        return (int) onlineRuntimes.values()
             .stream()
-            .filter(
-                fp -> fp.getOwnerUUID() != null && fp.getOwnerUUID()
-                    .equals(ownerUUID))
+            .filter(runtime -> runtime.ownerUUID() != null && runtime.ownerUUID().equals(ownerUUID))
             .count();
     }
 
     public static void clear() {
         fakePlayers.clear();
+        onlineRuntimes.clear();
         persistedBots.clear();
     }
 
@@ -283,6 +439,8 @@ public class FakePlayerRegistry {
             }
             bot.setInteger(FOLLOW_RANGE_KEY, data.getFollowRange());
             bot.setInteger(TELEPORT_RANGE_KEY, data.getTeleportRange());
+            bot.setString(RUNTIME_TYPE_KEY, data.getRuntimeType().name());
+            bot.setInteger(SNAPSHOT_VERSION_KEY, data.getSnapshotVersion());
             botList.appendTag(bot);
         }
         root.setTag(ROOT_KEY, botList);
@@ -315,62 +473,7 @@ public class FakePlayerRegistry {
                     continue;
                 }
 
-                UUID profileId = null;
-                if (bot.hasKey(PROFILE_ID_KEY)) {
-                    profileId = UUID.fromString(bot.getString(PROFILE_ID_KEY));
-                }
-
-                UUID owner = null;
-                if (bot.hasKey(OWNER_KEY)) {
-                    owner = UUID.fromString(bot.getString(OWNER_KEY));
-                }
-
-                int dimension = bot.hasKey(DIMENSION_KEY) ? bot.getInteger(DIMENSION_KEY) : 0;
-                double posX = bot.hasKey(POS_X_KEY) ? bot.getDouble(POS_X_KEY) : Double.NaN;
-                double posY = bot.hasKey(POS_Y_KEY) ? bot.getDouble(POS_Y_KEY) : Double.NaN;
-                double posZ = bot.hasKey(POS_Z_KEY) ? bot.getDouble(POS_Z_KEY) : Double.NaN;
-                float yaw = bot.hasKey(YAW_KEY) ? bot.getFloat(YAW_KEY) : 0.0F;
-                float pitch = bot.hasKey(PITCH_KEY) ? bot.getFloat(PITCH_KEY) : 0.0F;
-                int gameTypeId = bot.hasKey(GAME_TYPE_KEY) ? bot.getInteger(GAME_TYPE_KEY)
-                    : WorldSettings.GameType.SURVIVAL.getID();
-                boolean flying = bot.hasKey(FLYING_KEY) && bot.getBoolean(FLYING_KEY);
-                boolean monitoring = bot.hasKey(MONITORING_KEY) && bot.getBoolean(MONITORING_KEY);
-                int monitorRange = bot.hasKey(MONITOR_RANGE_KEY) ? bot.getInteger(MONITOR_RANGE_KEY) : 16;
-                int reminderInterval = bot.hasKey(REMINDER_INTERVAL_KEY) ? bot.getInteger(REMINDER_INTERVAL_KEY) : 600;
-                boolean monsterRepelling = bot.hasKey(MONSTER_REPELLING_KEY) && bot.getBoolean(MONSTER_REPELLING_KEY);
-                int monsterRepelRange = bot.hasKey(MONSTER_REPEL_RANGE_KEY) ? bot.getInteger(MONSTER_REPEL_RANGE_KEY)
-                    : 64;
-                UUID followTarget = null;
-                if (bot.hasKey(FOLLOW_TARGET_KEY)) {
-                    followTarget = UUID.fromString(bot.getString(FOLLOW_TARGET_KEY));
-                }
-                int followRange = bot.hasKey(FOLLOW_RANGE_KEY) ? bot.getInteger(FOLLOW_RANGE_KEY)
-                    : FollowService.DEFAULT_FOLLOW_RANGE;
-                int teleportRange = bot.hasKey(TELEPORT_RANGE_KEY) ? bot.getInteger(TELEPORT_RANGE_KEY)
-                    : FollowService.DEFAULT_TELEPORT_RANGE;
-
-                persistedBots.put(
-                    normalizedName,
-                    new PersistedBotData(
-                        name,
-                        profileId,
-                        owner,
-                        dimension,
-                        posX,
-                        posY,
-                        posZ,
-                        yaw,
-                        pitch,
-                        gameTypeId,
-                        flying,
-                        monitoring,
-                        monitorRange,
-                        reminderInterval,
-                        monsterRepelling,
-                        monsterRepelRange,
-                        followTarget,
-                        followRange,
-                        teleportRange));
+                persistedBots.put(normalizedName, PersistedBotData.fromTag(bot));
             }
         } catch (IOException e) {
             throw new IllegalStateException("Unable to load fake player registry from " + file.getAbsolutePath(), e);
@@ -382,37 +485,48 @@ public class FakePlayerRegistry {
     }
 
     public static List<FakePlayer> restorePersisted(BotRestorer restorer) {
+        List<BotRuntimeView> restoredRuntimes = restorePersistedViews(data -> {
+            FakePlayer fakePlayer = restorer == null ? null : restorer.restore(data);
+            if (fakePlayer == null) {
+                return null;
+            }
+            applyPersistedState(fakePlayer, data);
+            return fakePlayer.asRuntimeView();
+        });
+
         List<FakePlayer> restored = new ArrayList<FakePlayer>();
+        for (BotRuntimeView runtime : restoredRuntimes) {
+            EntityPlayerMP player = runtime == null || runtime.entity() == null ? null : runtime.entity()
+                .asPlayer();
+            if (player instanceof FakePlayer) {
+                restored.add((FakePlayer) player);
+            }
+        }
+        return restored;
+    }
+
+    public static List<BotRuntimeView> restorePersistedRuntimes(RuntimeRestorer restorer) {
+        return restorePersistedViews(restorer);
+    }
+
+    private static List<BotRuntimeView> restorePersistedViews(RuntimeRestorer restorer) {
+        List<BotRuntimeView> restored = new ArrayList<BotRuntimeView>();
         if (restorer == null) {
             return restored;
         }
 
         for (PersistedBotData data : new ArrayList<PersistedBotData>(persistedBots.values())) {
-            if (data == null || data.getName() == null || getFakePlayer(data.getName()) != null) {
+            if (data == null || data.getName() == null || getRuntimeView(data.getName()) != null) {
                 continue;
             }
 
-            FakePlayer fakePlayer = restorer.restore(data);
-            if (fakePlayer == null) {
+            BotRuntimeView runtime = restorer.restore(data);
+            if (runtime == null) {
                 continue;
             }
 
-            fakePlayer.setOwnerUUID(data.getOwnerUUID());
-            fakePlayer.setMonitoring(data.isMonitoring());
-            fakePlayer.setMonitorRange(data.getMonitorRange());
-            fakePlayer.setReminderInterval(data.getReminderInterval());
-            fakePlayer.setMonsterRepelling(data.isMonsterRepelling());
-            fakePlayer.setMonsterRepelRange(data.getMonsterRepelRange());
-            if (data.getFollowTarget() != null) {
-                fakePlayer.getFollowService()
-                    .setFollowRange(data.getFollowRange());
-                fakePlayer.getFollowService()
-                    .setTeleportRange(data.getTeleportRange());
-                fakePlayer.getFollowService()
-                    .startFollowing(data.getFollowTarget());
-            }
-            register(fakePlayer, data.getOwnerUUID());
-            restored.add(fakePlayer);
+            registerRuntimeInternal(runtime, data);
+            restored.add(runtime);
         }
         return restored;
     }
@@ -458,6 +572,107 @@ public class FakePlayerRegistry {
             fakePlayer.getMonsterRepelRange(),
             followTarget,
             followRange,
-            teleportRange);
+            teleportRange,
+            BotRuntimeType.LEGACY,
+            1);
+    }
+
+    private static void applyPersistedState(FakePlayer fakePlayer, PersistedBotData data) {
+        fakePlayer.setOwnerUUID(data.getOwnerUUID());
+        fakePlayer.setMonitoring(data.isMonitoring());
+        fakePlayer.setMonitorRange(data.getMonitorRange());
+        fakePlayer.setReminderInterval(data.getReminderInterval());
+        fakePlayer.setMonsterRepelling(data.isMonsterRepelling());
+        fakePlayer.setMonsterRepelRange(data.getMonsterRepelRange());
+        if (data.getFollowTarget() != null) {
+            fakePlayer.getFollowService()
+                .setFollowRange(data.getFollowRange());
+            fakePlayer.getFollowService()
+                .setTeleportRange(data.getTeleportRange());
+            fakePlayer.getFollowService()
+                .startFollowing(data.getFollowTarget());
+        }
+    }
+
+    private static void registerRuntimeInternal(BotRuntimeView runtime, PersistedBotData fallbackSnapshot) {
+        if (runtime == null || runtime.name() == null) {
+            return;
+        }
+        String normalizedName = normalize(runtime.name());
+        onlineRuntimes.put(normalizedName, runtime);
+        EntityPlayerMP player = runtime.entity() == null ? null : runtime.entity()
+            .asPlayer();
+        if (player instanceof FakePlayer) {
+            fakePlayers.put(normalizedName, (FakePlayer) player);
+        } else {
+            fakePlayers.remove(normalizedName);
+        }
+        PersistedBotData snapshot = snapshot(runtime, fallbackSnapshot);
+        if (snapshot != null) {
+            persistedBots.put(normalizedName, snapshot);
+        }
+    }
+
+    private static PersistedBotData snapshot(BotRuntimeView runtime, PersistedBotData fallback) {
+        if (runtime == null || runtime.name() == null) {
+            return fallback;
+        }
+        EntityPlayerMP player = runtime.entity() == null ? null : runtime.entity()
+            .asPlayer();
+        UUID profileId = player != null && player.getGameProfile() != null ? player.getGameProfile()
+            .getId() : fallback == null ? null : fallback.getProfileId();
+        WorldSettings.GameType gameType = player == null || player.theItemInWorldManager == null ? null
+            : player.theItemInWorldManager.getGameType();
+        int gameTypeId = gameType == null ? fallback == null ? WorldSettings.GameType.SURVIVAL.getID()
+            : fallback.getGameTypeId() : gameType.getID();
+        boolean flying = player != null && player.capabilities != null ? player.capabilities.isFlying
+            : fallback != null && fallback.isFlying();
+        UUID followTarget = runtime.follow() == null ? fallback == null ? null : fallback.getFollowTarget()
+            : runtime.follow()
+                .targetUUID();
+        int followRange = runtime.follow() == null ? fallback == null ? FollowService.DEFAULT_FOLLOW_RANGE
+            : fallback.getFollowRange() : runtime.follow()
+                .followRange();
+        int teleportRange = runtime.follow() == null ? fallback == null ? FollowService.DEFAULT_TELEPORT_RANGE
+            : fallback.getTeleportRange() : runtime.follow()
+                .teleportRange();
+        boolean monitoring = runtime.monitor() == null ? fallback != null && fallback.isMonitoring() : runtime.monitor()
+            .monitoring();
+        int monitorRange = runtime.monitor() == null ? fallback == null ? 1 : fallback.getMonitorRange()
+            : runtime.monitor()
+                .monitorRange();
+        int reminderInterval = runtime.monitor() == null ? fallback == null ? 60 : fallback.getReminderInterval()
+            : runtime.monitor()
+                .reminderInterval();
+        boolean repelling = runtime.repel() == null ? fallback != null && fallback.isMonsterRepelling() : runtime.repel()
+            .repelling();
+        int repelRange = runtime.repel() == null ? fallback == null ? 64 : fallback.getMonsterRepelRange()
+            : runtime.repel()
+                .repelRange();
+        BotRuntimeType runtimeType = runtime.runtimeType() == null ? fallback == null ? BotRuntimeType.LEGACY
+            : fallback.getRuntimeType() : runtime.runtimeType();
+        int snapshotVersion = fallback == null ? 1 : fallback.getSnapshotVersion();
+        return new PersistedBotData(
+            runtime.name(),
+            profileId,
+            runtime.ownerUUID() == null ? fallback == null ? null : fallback.getOwnerUUID() : runtime.ownerUUID(),
+            player == null ? runtime.dimension() : player.dimension,
+            player == null ? fallback == null ? 0.0D : fallback.getPosX() : player.posX,
+            player == null ? fallback == null ? 0.0D : fallback.getPosY() : player.posY,
+            player == null ? fallback == null ? 0.0D : fallback.getPosZ() : player.posZ,
+            player == null ? fallback == null ? 0.0F : fallback.getYaw() : player.rotationYaw,
+            player == null ? fallback == null ? 0.0F : fallback.getPitch() : player.rotationPitch,
+            gameTypeId,
+            flying,
+            monitoring,
+            monitorRange,
+            reminderInterval,
+            repelling,
+            repelRange,
+            followTarget,
+            followRange,
+            teleportRange,
+            runtimeType,
+            snapshotVersion);
     }
 }

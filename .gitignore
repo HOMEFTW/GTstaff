@@ -22,6 +22,8 @@ Thumbs.db
 # Minecraft run directories
 run/
 logs/
+data/
+.gradle-user-home/
 
 # Build output
 *.jar

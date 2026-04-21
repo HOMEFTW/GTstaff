@@ -6,8 +6,10 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import net.minecraft.entity.player.EntityPlayerMP;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.management.ServerConfigurationManager;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ChatComponentText;
@@ -166,28 +168,45 @@ public class MachineMonitorService {
     }
 
     public void tick(FakePlayer fakePlayer) {
-        if (fakePlayer == null || !this.monitoring || fakePlayer.ticksExisted <= 0) {
+        if (fakePlayer == null) {
+            return;
+        }
+        tick(fakePlayer.getCommandSenderName(), fakePlayer, fakePlayer.getOwnerUUID());
+    }
+
+    public void tick(String botName, EntityPlayerMP player, UUID ownerUUID) {
+        if (player == null || !this.monitoring || player.ticksExisted <= 0) {
             return;
         }
 
-        if (fakePlayer.ticksExisted % SCAN_INTERVAL == 0) {
+        String resolvedBotName = botName == null || botName.trim().isEmpty() ? player.getCommandSenderName() : botName;
+
+        if (player.ticksExisted % SCAN_INTERVAL == 0) {
             boolean wasEmpty = this.machineStates.isEmpty();
-            Map<ChunkCoordinates, MachineState> latestStates = scanMachines(fakePlayer);
+            Map<ChunkCoordinates, MachineState> latestStates = scanMachines(player);
             if (wasEmpty && !latestStates.isEmpty()) {
-                for (String line : buildOverviewLines(fakePlayer.getCommandSenderName())) {
-                    emitMessage(fakePlayer, line);
+                for (String line : buildOverviewLines(resolvedBotName)) {
+                    emitMessage(ownerUUID, resolvedBotName, line);
                 }
             }
-            for (String message : applyLatestState(fakePlayer.getCommandSenderName(), latestStates)) {
-                emitMessage(fakePlayer, message);
+            for (String message : applyLatestState(resolvedBotName, latestStates)) {
+                emitMessage(ownerUUID, resolvedBotName, message);
             }
         }
 
-        if (fakePlayer.ticksExisted % this.reminderInterval == 0 && hasProblemMachines()) {
-            for (String line : buildProblemSummaryLines(fakePlayer.getCommandSenderName())) {
-                emitMessage(fakePlayer, line);
+        if (player.ticksExisted % this.reminderInterval == 0 && hasProblemMachines()) {
+            for (String line : buildProblemSummaryLines(resolvedBotName)) {
+                emitMessage(ownerUUID, resolvedBotName, line);
             }
         }
+    }
+
+    public void scanNow(String botName, EntityPlayerMP player) {
+        if (player == null) {
+            return;
+        }
+        String resolvedBotName = botName == null || botName.trim().isEmpty() ? player.getCommandSenderName() : botName;
+        applyLatestState(resolvedBotName, scanMachines(player));
     }
 
     public boolean hasProblemMachines() {
@@ -235,18 +254,18 @@ public class MachineMonitorService {
         return lines.isEmpty() ? "" : String.join("\n", lines);
     }
 
-    protected Map<ChunkCoordinates, MachineState> scanMachines(FakePlayer fakePlayer) {
+    protected Map<ChunkCoordinates, MachineState> scanMachines(EntityPlayerMP player) {
         Map<ChunkCoordinates, MachineState> latestStates = new HashMap<ChunkCoordinates, MachineState>();
-        if (fakePlayer == null || fakePlayer.worldObj == null || fakePlayer.worldObj.loadedTileEntityList == null) {
+        if (player == null || player.worldObj == null || player.worldObj.loadedTileEntityList == null) {
             return latestStates;
         }
 
         double rangeSquared = (double) this.monitorRange * (double) this.monitorRange;
-        for (Object entry : new ArrayList<Object>(fakePlayer.worldObj.loadedTileEntityList)) {
+        for (Object entry : new ArrayList<Object>(player.worldObj.loadedTileEntityList)) {
             if (!(entry instanceof TileEntity tileEntity)) {
                 continue;
             }
-            if (!isWithinRange(fakePlayer, tileEntity, rangeSquared)) {
+            if (!isWithinRange(player, tileEntity, rangeSquared)) {
                 continue;
             }
             if (!(tileEntity instanceof IGregTechTileEntity gregTechTileEntity)) {
@@ -269,17 +288,22 @@ public class MachineMonitorService {
         return latestStates;
     }
 
-    protected void emitMessage(FakePlayer fakePlayer, String message) {
-        if (fakePlayer == null || fakePlayer.mcServer == null || fakePlayer.getOwnerUUID() == null) {
+    protected void emitMessage(UUID ownerUUID, String botName, String message) {
+        if (ownerUUID == null) {
             return;
         }
 
-        ServerConfigurationManager configurationManager = fakePlayer.mcServer.getConfigurationManager();
+        MinecraftServer server = MinecraftServer.getServer();
+        if (server == null) {
+            return;
+        }
+
+        ServerConfigurationManager configurationManager = server.getConfigurationManager();
         if (configurationManager == null || configurationManager.playerEntityList == null) {
             return;
         }
 
-        EnumChatFormatting color = fakePlayer.getChatColor();
+        EnumChatFormatting color = FakePlayer.getChatColorForName(botName);
         ChatComponentText component = new ChatComponentText(message);
         if (color != null) {
             component.getChatStyle()
@@ -290,8 +314,7 @@ public class MachineMonitorService {
             if (!(entry instanceof EntityPlayerMP player)) {
                 continue;
             }
-            if (fakePlayer.getOwnerUUID()
-                .equals(player.getUniqueID())) {
+            if (ownerUUID.equals(player.getUniqueID())) {
                 player.addChatMessage(component);
                 return;
             }
@@ -310,10 +333,10 @@ public class MachineMonitorService {
             + event;
     }
 
-    private boolean isWithinRange(FakePlayer fakePlayer, TileEntity tileEntity, double rangeSquared) {
-        double dx = tileEntity.xCoord + 0.5D - fakePlayer.posX;
-        double dy = tileEntity.yCoord + 0.5D - fakePlayer.posY;
-        double dz = tileEntity.zCoord + 0.5D - fakePlayer.posZ;
+    private boolean isWithinRange(EntityPlayerMP player, TileEntity tileEntity, double rangeSquared) {
+        double dx = tileEntity.xCoord + 0.5D - player.posX;
+        double dy = tileEntity.yCoord + 0.5D - player.posY;
+        double dz = tileEntity.zCoord + 0.5D - player.posZ;
         return dx * dx + dy * dy + dz * dz <= rangeSquared;
     }
 

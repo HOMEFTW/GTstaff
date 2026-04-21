@@ -19,6 +19,17 @@ import org.junit.jupiter.api.Test;
 
 import com.mojang.authlib.GameProfile;
 import com.mojang.authlib.properties.Property;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotActionRuntime;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotEntityBridge;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotFollowRuntime;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotInventoryRuntime;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotMonitorRuntime;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotRepelRuntime;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotRuntimeType;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotRuntimeView;
+import com.andgatech.gtstaff.fakeplayer.runtime.BotSession;
+import com.andgatech.gtstaff.fakeplayer.runtime.GTstaffForgePlayer;
+import com.andgatech.gtstaff.fakeplayer.runtime.NextGenBotRuntime;
 
 class FakePlayerSkinRestoreSchedulerTest {
 
@@ -42,11 +53,11 @@ class FakePlayerSkinRestoreSchedulerTest {
         FakePlayerSkinRestoreScheduler.setMainThreadExecutorForTests(mainThreadQueue::add);
         FakePlayerSkinRestoreScheduler.setResolverForTests(name -> java.util.Optional.of(profile));
         FakePlayerSkinRestoreScheduler.setRebuildActionForTests((minecraftServer, oldBot, newProfile) -> {
-            rebuilt.append(oldBot.getCommandSenderName());
+            rebuilt.append(oldBot.name());
             return oldBot;
         });
 
-        FakePlayerSkinRestoreScheduler.schedule(server, bot);
+        FakePlayerSkinRestoreScheduler.schedule(server, bot.asRuntimeView());
         runQueue(asyncQueue);
         runQueue(mainThreadQueue);
 
@@ -69,11 +80,36 @@ class FakePlayerSkinRestoreSchedulerTest {
             return oldBot;
         });
 
-        FakePlayerSkinRestoreScheduler.schedule(server, bot);
+        FakePlayerSkinRestoreScheduler.schedule(server, bot.asRuntimeView());
         runQueue(asyncQueue);
         runQueue(mainThreadQueue);
 
         assertEquals(0, rebuilt[0]);
+    }
+
+    @Test
+    void successfulSkinResolveSchedulesRebuildForNextGenRuntime() {
+        Queue<Runnable> asyncQueue = new ArrayDeque<Runnable>();
+        Queue<Runnable> mainThreadQueue = new ArrayDeque<Runnable>();
+        TestMinecraftServer server = allocate(TestMinecraftServer.class);
+        GTstaffForgePlayer player = nextGenPlayer("NextGenSkinBot");
+        NextGenBotRuntime runtime = new NextGenBotRuntime(player, new BotSession(player), UUID.randomUUID());
+        GameProfile profile = texturedProfile("NextGenSkinBot");
+        StringBuilder rebuilt = new StringBuilder();
+
+        FakePlayerSkinRestoreScheduler.setAsyncExecutorForTests(asyncQueue::add);
+        FakePlayerSkinRestoreScheduler.setMainThreadExecutorForTests(mainThreadQueue::add);
+        FakePlayerSkinRestoreScheduler.setResolverForTests(name -> java.util.Optional.of(profile));
+        FakePlayerSkinRestoreScheduler.setRebuildActionForTests((minecraftServer, oldBot, newProfile) -> {
+            rebuilt.append(oldBot.name());
+            return oldBot;
+        });
+
+        FakePlayerSkinRestoreScheduler.schedule(server, runtime);
+        runQueue(asyncQueue);
+        runQueue(mainThreadQueue);
+
+        assertEquals("NextGenSkinBot", rebuilt.toString());
     }
 
     @Test
@@ -149,6 +185,18 @@ class FakePlayerSkinRestoreSchedulerTest {
         fakePlayer.profile = new GameProfile(UUID.randomUUID(), name);
         fakePlayer.followService = new FollowService(fakePlayer, () -> null, (bot, target, server) -> true);
         return fakePlayer;
+    }
+
+    private static GTstaffForgePlayer nextGenPlayer(String name) {
+        GTstaffForgePlayer player = allocate(GTstaffForgePlayer.class);
+        player.inventory = new net.minecraft.entity.player.InventoryPlayer(player);
+        setField(net.minecraft.entity.Entity.class, player, "worldObj", allocate(net.minecraft.world.WorldServer.class));
+        setField(
+            net.minecraft.entity.player.EntityPlayer.class,
+            player,
+            "field_146106_i",
+            new GameProfile(UUID.randomUUID(), name));
+        return player;
     }
 
     private static final class StubSkinBot extends FakePlayer {
@@ -258,6 +306,70 @@ class FakePlayerSkinRestoreSchedulerTest {
         public void respawnFake() {}
     }
 
+    private static final class StubRuntimeView implements BotRuntimeView {
+
+        private final String name;
+
+        private StubRuntimeView(String name) {
+            this.name = name;
+        }
+
+        @Override
+        public String name() {
+            return name;
+        }
+
+        @Override
+        public UUID ownerUUID() {
+            return null;
+        }
+
+        @Override
+        public int dimension() {
+            return 0;
+        }
+
+        @Override
+        public BotRuntimeType runtimeType() {
+            return BotRuntimeType.NEXTGEN;
+        }
+
+        @Override
+        public BotEntityBridge entity() {
+            return () -> null;
+        }
+
+        @Override
+        public boolean online() {
+            return true;
+        }
+
+        @Override
+        public BotActionRuntime action() {
+            return null;
+        }
+
+        @Override
+        public BotFollowRuntime follow() {
+            return null;
+        }
+
+        @Override
+        public BotMonitorRuntime monitor() {
+            return null;
+        }
+
+        @Override
+        public BotRepelRuntime repel() {
+            return null;
+        }
+
+        @Override
+        public BotInventoryRuntime inventory() {
+            return null;
+        }
+    }
+
     private static final class TestMinecraftServer extends MinecraftServer {
 
         private TestMinecraftServer() {
@@ -321,6 +433,16 @@ class FakePlayerSkinRestoreSchedulerTest {
             field.setAccessible(true);
             sun.misc.Unsafe unsafe = (sun.misc.Unsafe) field.get(null);
             return type.cast(unsafe.allocateInstance(type));
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    private static void setField(Class<?> owner, Object target, String name, Object value) {
+        try {
+            Field field = owner.getDeclaredField(name);
+            field.setAccessible(true);
+            field.set(target, value);
         } catch (ReflectiveOperationException e) {
             throw new AssertionError(e);
         }

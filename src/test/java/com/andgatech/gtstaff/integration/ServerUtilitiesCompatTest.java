@@ -15,12 +15,14 @@ import net.minecraft.entity.player.EntityPlayerMP;
 import org.junit.jupiter.api.Test;
 
 import com.andgatech.gtstaff.fakeplayer.FakePlayer;
+import com.andgatech.gtstaff.fakeplayer.runtime.GTstaffForgePlayer;
 
 class ServerUtilitiesCompatTest {
 
     @Test
     void detectsGtstaffFakePlayersAsServerUtilitiesFakePlayers() {
         assertTrue(invokeCompatCheck(allocate(TestFakePlayer.class)));
+        assertTrue(invokeCompatCheck(allocate(TestNextGenFakePlayer.class)));
         assertFalse(invokeCompatCheck(allocate(TestRealPlayer.class)));
         assertFalse(invokeCompatCheck(null));
     }
@@ -80,6 +82,13 @@ class ServerUtilitiesCompatTest {
 
         private TestRealPlayer() {
             super(null, null, null, null);
+        }
+    }
+
+    private static final class TestNextGenFakePlayer extends GTstaffForgePlayer {
+
+        private TestNextGenFakePlayer() {
+            super(null, null, null);
         }
     }
 }
