@@ -17,7 +17,8 @@ import cpw.mods.fml.common.event.FMLServerStoppingEvent;
     modid = GTstaff.MODID,
     version = GTstaff.VERSION,
     name = GTstaff.MOD_NAME,
-    dependencies = "required-after:gregtech;required-after:gtnhlib;required-after:modularui;",
+    dependencies = "required-after:gregtech;required-after:gtnhlib;required-after:modularui;"
+        + "required-after:Baubles|Expanded;required-after:backhand;",
     acceptedMinecraftVersions = "[1.7.10]")
 public class GTstaff {
 

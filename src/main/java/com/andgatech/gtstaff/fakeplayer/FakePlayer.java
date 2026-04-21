@@ -19,6 +19,7 @@ import com.andgatech.gtstaff.fakeplayer.runtime.BotRuntimeView;
 import com.andgatech.gtstaff.fakeplayer.runtime.LegacyBotHandle;
 import com.google.common.base.Charsets;
 import com.mojang.authlib.GameProfile;
+import com.andgatech.gtstaff.integration.BackhandCompat;
 
 public class FakePlayer extends EntityPlayerMP implements PlayerVisualSync {
 
@@ -571,6 +572,7 @@ public class FakePlayer extends EntityPlayerMP implements PlayerVisualSync {
                     .sendPacket(new S04PacketEntityEquipment(entityId, i + 1, this.inventory.armorInventory[i]));
             }
         }
+        BackhandCompat.syncOffhandToWatchers(this);
     }
 
     /**
