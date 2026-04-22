@@ -230,6 +230,45 @@ class FakePlayerRegistryTest {
     }
 
     @Test
+    void saveRefreshesNextGenRuntimeStateInsteadOfKeepingInitialSnapshot(@TempDir File tempDir) {
+        FakePlayerRegistry.clear();
+        MutableRuntimeView runtime = new MutableRuntimeView("NextGenBot");
+        FakePlayerRegistry.registerRuntime(runtime);
+
+        runtime.monitor.setMonitoring(true);
+        runtime.monitor.setMonitorRange(48);
+        runtime.monitor.setReminderInterval(240);
+        runtime.repel.setRepelling(true);
+        runtime.repel.setRepelRange(96);
+        UUID followTarget = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+        runtime.follow.setFollowRange(5);
+        runtime.follow.setTeleportRange(40);
+        runtime.follow.startFollowing(followTarget);
+
+        File file = new File(tempDir, "gtstaff_registry.dat");
+        FakePlayerRegistry.save(file);
+
+        FakePlayerRegistry.clear();
+        FakePlayerRegistry.load(file);
+
+        List<FakePlayerRegistry.PersistedBotData> restoredData = new ArrayList<FakePlayerRegistry.PersistedBotData>();
+        FakePlayerRegistry.restorePersistedRuntimes(data -> {
+            restoredData.add(data);
+            return new StubRuntimeView(data.getName(), data.getRuntimeType());
+        });
+        FakePlayerRegistry.PersistedBotData persisted = restoredData.get(0);
+
+        assertTrue(persisted.isMonitoring());
+        assertEquals(48, persisted.getMonitorRange());
+        assertEquals(240, persisted.getReminderInterval());
+        assertTrue(persisted.isMonsterRepelling());
+        assertEquals(96, persisted.getMonsterRepelRange());
+        assertEquals(followTarget, persisted.getFollowTarget());
+        assertEquals(5, persisted.getFollowRange());
+        assertEquals(40, persisted.getTeleportRange());
+    }
+
+    @Test
     void registerRuntimeClearsStaleLegacyLookupWhenReplacingWithNextGen() {
         StubFakePlayer legacy = fakePlayer("NextGenBot");
         FakePlayerRegistry.register(legacy, UUID.randomUUID());
@@ -374,6 +413,188 @@ class FakePlayerRegistryTest {
         @Override
         public BotInventoryRuntime inventory() {
             return null;
+        }
+    }
+
+    private static final class MutableRuntimeView implements BotRuntimeView {
+
+        private final String name;
+        private final MutableFollowRuntime follow = new MutableFollowRuntime();
+        private final MutableMonitorRuntime monitor = new MutableMonitorRuntime();
+        private final MutableRepelRuntime repel = new MutableRepelRuntime();
+
+        private MutableRuntimeView(String name) {
+            this.name = name;
+        }
+
+        @Override
+        public String name() {
+            return name;
+        }
+
+        @Override
+        public UUID ownerUUID() {
+            return null;
+        }
+
+        @Override
+        public int dimension() {
+            return 0;
+        }
+
+        @Override
+        public BotRuntimeType runtimeType() {
+            return BotRuntimeType.NEXTGEN;
+        }
+
+        @Override
+        public BotEntityBridge entity() {
+            return () -> null;
+        }
+
+        @Override
+        public boolean online() {
+            return true;
+        }
+
+        @Override
+        public BotActionRuntime action() {
+            return null;
+        }
+
+        @Override
+        public BotFollowRuntime follow() {
+            return follow;
+        }
+
+        @Override
+        public BotMonitorRuntime monitor() {
+            return monitor;
+        }
+
+        @Override
+        public BotRepelRuntime repel() {
+            return repel;
+        }
+
+        @Override
+        public BotInventoryRuntime inventory() {
+            return null;
+        }
+    }
+
+    private static final class MutableFollowRuntime implements BotFollowRuntime {
+
+        private UUID targetUUID;
+        private int followRange;
+        private int teleportRange;
+
+        @Override
+        public boolean following() {
+            return targetUUID != null;
+        }
+
+        @Override
+        public UUID targetUUID() {
+            return targetUUID;
+        }
+
+        @Override
+        public int followRange() {
+            return followRange;
+        }
+
+        @Override
+        public int teleportRange() {
+            return teleportRange;
+        }
+
+        @Override
+        public void startFollowing(UUID targetUUID) {
+            this.targetUUID = targetUUID;
+        }
+
+        @Override
+        public void stop() {
+            this.targetUUID = null;
+        }
+
+        @Override
+        public void setFollowRange(int range) {
+            this.followRange = range;
+        }
+
+        @Override
+        public void setTeleportRange(int range) {
+            this.teleportRange = range;
+        }
+    }
+
+    private static final class MutableMonitorRuntime implements BotMonitorRuntime {
+
+        private boolean monitoring;
+        private int monitorRange;
+        private int reminderInterval;
+
+        @Override
+        public boolean monitoring() {
+            return monitoring;
+        }
+
+        @Override
+        public int monitorRange() {
+            return monitorRange;
+        }
+
+        @Override
+        public int reminderInterval() {
+            return reminderInterval;
+        }
+
+        @Override
+        public void setMonitoring(boolean monitoring) {
+            this.monitoring = monitoring;
+        }
+
+        @Override
+        public void setMonitorRange(int range) {
+            this.monitorRange = range;
+        }
+
+        @Override
+        public void setReminderInterval(int ticks) {
+            this.reminderInterval = ticks;
+        }
+
+        @Override
+        public String overviewMessage(String botName) {
+            return "";
+        }
+    }
+
+    private static final class MutableRepelRuntime implements BotRepelRuntime {
+
+        private boolean repelling;
+        private int repelRange;
+
+        @Override
+        public boolean repelling() {
+            return repelling;
+        }
+
+        @Override
+        public int repelRange() {
+            return repelRange;
+        }
+
+        @Override
+        public void setRepelling(boolean repelling) {
+            this.repelling = repelling;
+        }
+
+        @Override
+        public void setRepelRange(int range) {
+            this.repelRange = range;
         }
     }
 }

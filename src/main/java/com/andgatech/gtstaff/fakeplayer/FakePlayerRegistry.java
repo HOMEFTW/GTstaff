@@ -396,9 +396,12 @@ public class FakePlayerRegistry {
         NBTTagCompound root = new NBTTagCompound();
         NBTTagList botList = new NBTTagList();
         Map<String, PersistedBotData> snapshotByName = new LinkedHashMap<String, PersistedBotData>(persistedBots);
-        for (FakePlayer fakePlayer : fakePlayers.values()) {
-            snapshotByName
-                .put(normalize(fakePlayer.getCommandSenderName()), snapshot(fakePlayer, fakePlayer.getOwnerUUID()));
+        for (BotRuntimeView runtime : onlineRuntimes.values()) {
+            if (runtime == null || runtime.name() == null) {
+                continue;
+            }
+            PersistedBotData previous = snapshotByName.get(normalize(runtime.name()));
+            snapshotByName.put(normalize(runtime.name()), snapshot(runtime, previous));
         }
         for (PersistedBotData data : snapshotByName.values()) {
             if (data == null || data.getName() == null) {

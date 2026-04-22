@@ -12,6 +12,7 @@ import com.andgatech.gtstaff.fakeplayer.FakePlayerRegistry;
 import com.andgatech.gtstaff.fakeplayer.FakePlayerRestoreScheduler;
 import com.andgatech.gtstaff.fakeplayer.FakePlayerSkinRestoreScheduler;
 import com.andgatech.gtstaff.fakeplayer.MonsterRepellentService;
+import com.andgatech.gtstaff.integration.BackhandTrackingSyncService;
 import com.andgatech.gtstaff.ui.FakePlayerInventoryGuiHandler;
 
 import cpw.mods.fml.common.event.FMLInitializationEvent;
@@ -34,6 +35,7 @@ public class CommonProxy {
         FakePlayerRestoreScheduler.register();
         NetworkRegistry.INSTANCE.registerGuiHandler(GTstaff.instance, FakePlayerInventoryGuiHandler.INSTANCE);
         MinecraftForge.EVENT_BUS.register(MonsterRepellentService.INSTANCE);
+        MinecraftForge.EVENT_BUS.register(BackhandTrackingSyncService.INSTANCE);
     }
 
     public void postInit(FMLPostInitializationEvent event) {}

@@ -1,4 +1,64 @@
 ﻿# 开发日志
+## 2026-04-22：发布 v1.1.1 到 GitHub
+
+### 已完成
+- 已将当前 `master` 上的 nextgen 假人副手显示修复、Backhand 追踪补同步与 registry 持久化修复整理为 `v1.1.1`
+- 已将 `gradle.properties` 中的版本号提升到 `v1.1.1`
+- 已离线通过 `./gradlew.bat --offline --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true test assemble`
+- 已确认最新产物更新为 `build/libs/gtstaff-v1.1.1.jar`、`build/libs/gtstaff-v1.1.1-dev.jar`、`build/libs/gtstaff-v1.1.1-sources.jar`
+- 计划发布地址：https://github.com/HOMEFTW/GTstaff/releases/tag/v1.1.1
+
+### 遇到的问题
+- 这次发布主要是对 `v1.1.0` 的 nextgen fake player 兼容收尾，重点问题集中在 Backhand 会把 Forge `FakePlayer` 判为无效玩家，导致副手同步链静默失效
+
+### 做出的决定
+- 将这轮确认有效的 nextgen 修复直接收口为 `v1.1.1` patch release，避免把仍有已知兼容缺口的 `v1.1.0` 继续作为推荐交付版本
+
+## 2026-04-22：修复 nextgen 假人副手客户端显示仍不生效
+
+### 已完成
+- 继续对照 `Backhand-master` 源码排查后确认，之前那版修复虽然让 `GTstaffForgePlayer.syncEquipmentToWatchers()` 会调用 `BackhandCompat.syncOffhandToWatchers(this)`，但 Backhand 原本的 `BackhandPacketHandler.sendPacketToAllTracking(...)` 在内部会先走 `BackhandUtils.isValidPlayer(entity)`，而该判定会直接排除 Forge `FakePlayer`
+- 这意味着 nextgen 假人虽然触发了副手同步桥，但由于 `GTstaffForgePlayer` 继承自 Forge `FakePlayer`，Backhand 仍会把它当成无效源实体，副手同步包根本不会真正发到客户端
+- `BackhandCompat` 现已改为由 GTstaff 自己构造 `OffhandSyncItemPacket`，并逐个向同维度客户端玩家反射调用 `BackhandPacketHandler.sendPacketToPlayer(...)`，不再依赖会拒绝 Forge `FakePlayer` 的 `sendPacketToAllTracking(...)`
+- 新增 `BackhandTrackingSyncService`，在玩家开始追踪 nextgen 假人时也主动补发一次当前副手状态，弥补 Backhand 自身 `StartTracking` 钩子同样会因 `isValidPlayer(target)` 拒绝 nextgen 假人的问题
+- 新增回归测试：`FakePlayerBackhandSyncTest.syncOffhandToWatchersSendsPacketToEachWorldWatcher()`、`BackhandTrackingSyncServiceTest.startTrackingNextGenFakePlayerSyncsCurrentOffhandToWatcher()`
+- 已重新通过离线测试：`FakePlayerBackhandSyncTest`、`BackhandTrackingSyncServiceTest`、`GTstaffForgePlayerTest`、`FakePlayerInventoryContainerTest`
+
+### 遇到的问题
+- 这次的真实根因不是容器没写入，也不是 `syncEquipmentToWatchers()` 没调用，而是 Backhand 老代码里把 Forge `FakePlayer` 语义直接当成“无效玩家”，导致 nextgen fake player 在副手同步链和开始追踪链上都被短路
+
+### 做出的决定
+- 对 nextgen fake player 的 Backhand 联动改为“GTstaff 自己负责发包，不再复用 Backhand 那条会排除 Forge `FakePlayer` 的源实体校验路径”，避免后续再被第三方兼容层的旧类型判断卡死
+
+## 2026-04-22：修复 nextgen 假人副手放置后不显示
+
+### 已完成
+- 排查 `PlayerVisualSync` 双实现链后确认：legacy `FakePlayer.syncEquipmentToWatchers()` 已会追加 `BackhandCompat.syncOffhandToWatchers(this)`，但 nextgen `GTstaffForgePlayer.syncEquipmentToWatchers()` 漏掉了这一步，导致副手物品虽然写入成功，却没有把 Backhand 的副手同步包广播给观察客户端
+- 先补上 `FakePlayerBackhandSyncTest.nextGenFakePlayerEquipmentSyncAlsoTriggersBackhandOffhandSync()`，用红灯锁定 nextgen 假人装备同步必须触发副手同步
+- `GTstaffForgePlayer.syncEquipmentToWatchers()` 现已补齐 `BackhandCompat.syncOffhandToWatchers(this)`，让 nextgen 假人的副手显示链与 legacy 保持一致
+- 已重新通过离线测试：`FakePlayerBackhandSyncTest`、`GTstaffForgePlayerTest`
+
+### 遇到的问题
+- 这次不是副手槽写入失败，而是 nextgen 假人的“可视同步”只发了主手和盔甲 `S04PacketEntityEquipment`，漏掉了 Backhand 自己的副手同步通道，所以客户端始终看不到副手更新
+
+### 做出的决定
+- 继续保留“主手/盔甲走原版装备包，副手走 Backhand 兼容桥”的同步策略，但要求 legacy 与 nextgen 两套假人实现都复用同一条副手广播语义，避免后续 runtime 切换时再次出现显示差异
+
+## 2026-04-22：审计并修复 nextgen 迁移后的持久化缺口
+
+### 已完成
+- 沿着 nextgen/legacy 双轨接口对“仍绑死 legacy 容器或索引”的代码做了一轮定向审计，重点检查了 registry 保存链、命令入口、UI 列表来源和可视同步桥
+- 确认 `FakePlayerRegistry.save(...)` 仍只会对 legacy `fakePlayers` 重新拍快照；nextgen 在线 runtime 虽然会在注册时写入一次 snapshot，但运行中后续发生的监控、驱逐、跟随等状态修改在保存时不会刷新
+- 已将保存链改为统一遍历 `onlineRuntimes`，对 legacy 与 nextgen 都通过 `snapshot(runtime, previous)` 实时刷新持久化快照，不再让 nextgen bot 停留在注册时的旧状态
+- 新增 `FakePlayerRegistryTest.saveRefreshesNextGenRuntimeStateInsteadOfKeepingInitialSnapshot()`，锁定 nextgen bot 在保存前发生的 monitor/repel/follow 状态变化必须被写入 registry
+- 已重新通过离线测试：`FakePlayerRegistryTest`、`BotLifecycleManagerTest`、`FakePlayerRestoreSchedulerTest`
+
+### 遇到的问题
+- 这个问题比副手同步更隐蔽，因为 nextgen bot 平时在线时功能都正常，只有在 `save/load/restore` 链路上才会暴露为“重启后状态退回旧值”
+
+### 做出的决定
+- 后续继续把迁移审计重点放在“legacy map/legacy class-only 循环”和“双实现语义是否完全对齐”上；这类问题通常不会立刻报错，但会在保存、恢复、重建、同步这些边缘链路里悄悄丢行为
+
 ## 2026-04-22：发布 v1.1.0 到 GitHub
 
 ### 已完成

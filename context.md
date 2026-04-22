@@ -3,12 +3,12 @@
 ## 基本信息
 - Mod Name: GTstaff
 - Mod ID: gtstaff
-- Version: v1.1.0
+- Version: v1.1.1
 - Root Package: `com.andgatech.gtstaff`
 - Target: MC 1.7.10 + Forge 10.13.4.1614 + GTNH
 - GitHub: https://github.com/HOMEFTW/GTstaff
-- Latest Release: https://github.com/HOMEFTW/GTstaff/releases/tag/v1.1.0
-- 最新确认产物：`build/libs/gtstaff-v1.1.0.jar`、`build/libs/gtstaff-v1.1.0-dev.jar`、`build/libs/gtstaff-v1.1.0-sources.jar`（2026-04-22 离线 `test assemble` 成功，主 jar 时间已更新到 00:50）
+- Latest Release: https://github.com/HOMEFTW/GTstaff/releases/tag/v1.1.1
+- 最新确认产物：`build/libs/gtstaff-v1.1.1.jar`、`build/libs/gtstaff-v1.1.1-dev.jar`、`build/libs/gtstaff-v1.1.1-sources.jar`（2026-04-22 离线 `test assemble` 成功，主 jar 时间已更新到 09:46）
 
 ### Mod 入口与代理
 - `GTstaff`：`@Mod` 入口类，定义 MODID/VERSION/LOG，通过 `@SidedProxy` 委托所有 FML 生命周期事件
@@ -35,6 +35,9 @@
 - 2026-04-21 迁移推进确认：`BotLifecycleManagerTest.restoreNextGenReappliesPersistedServiceState()` 已显式固定 `BotRuntimeMode.NEXTGEN`，避免组合测试被全局 `fakePlayerRuntimeMode` 污染
 - 2026-04-21 迁移推进确认：`GTstaffForgePlayer` 现已补齐 legacy 风格的自然死亡自动复活语义；`BotLifecycleManager.kill(...)` 会先为 nextgen bot 标记 `disconnected`，避免显式下线被自动复活逻辑反向拉回
 - 2026-04-21 迁移推进确认：`GTstaffForgePlayer.attackEntityFrom(...)` 现已绕过 creative `capabilities.disableDamage` 对原版玩家受伤链的二次拦截；在线 nextgen bot 即使保留 creative/飞行能力状态也可以进入真实伤害链，显式 `disconnected` 后仍保持不受伤隔离
+- 2026-04-22 兼容修复确认：`GTstaffForgePlayer.syncEquipmentToWatchers()` 现已和 legacy `FakePlayer` 一样，在发送主手/盔甲装备包后继续调用 `BackhandCompat.syncOffhandToWatchers(this)`；nextgen 假人副手槽写入后，观察客户端也能立即看到副手物品显示
+- 2026-04-22 审计修复确认：`FakePlayerRegistry.save(...)` 不再只刷新 legacy `fakePlayers` 的快照，而是统一遍历 `onlineRuntimes` 重新拍当前 runtime 状态；nextgen bot 在线期间对 monitor/repel/follow 等运行时服务做出的修改，现在也会被正确持久化并参与后续 restore
+- 2026-04-22 兼容修复确认：Backhand 原生 `sendPacketToAllTracking(...)` / `StartTracking` 链路会因 `BackhandUtils.isValidPlayer(...)` 排除 Forge `FakePlayer` 而拒绝 nextgen 假人；GTstaff 现已改为自行构造 `OffhandSyncItemPacket` 并逐玩家反射发送，同时在 `StartTracking` 时为 `GTstaffForgePlayer` 额外补发当前副手状态
 - 2026-04-21 迁移推进确认：`FakePlayerRestoreScheduler.isReady(...)` 与 `Entity_KnockbackMixin` 现已统一复用 `ServerUtilitiesCompat.isFakePlayer(...)`，nextgen `GTstaffForgePlayer` 不再在集成服恢复等待或 knockback 标记上被误判成真实玩家
 - 2026-04-21 迁移推进确认：`FakeNetHandlerPlayServer` 现已补齐 nextgen `GTstaffForgePlayer` 的 duplicate-login / idle kick 下线链，`BotSession` 挂接的会话 handler 不再只对 legacy 假人执行真正清理
 - 2026-04-21 迁移推进确认：`ServerConfigurationManagerMixin` 与 `EntityPlayerMP_RespawnMixin` 现已补齐 nextgen 服务端 respawn 兼容；若外部链路触发 `respawnPlayer(...)`，`GTstaffForgePlayer` 不会再降级成原版 `EntityPlayerMP`，owner 与 monitor/follow/repel 等 runtime 状态也会重新回绑并注册

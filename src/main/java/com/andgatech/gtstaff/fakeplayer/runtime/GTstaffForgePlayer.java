@@ -14,6 +14,7 @@ import net.minecraftforge.common.util.FakePlayer;
 import com.andgatech.gtstaff.fakeplayer.IFakePlayerHolder;
 import com.andgatech.gtstaff.fakeplayer.PlayerActionPack;
 import com.andgatech.gtstaff.fakeplayer.PlayerVisualSync;
+import com.andgatech.gtstaff.integration.BackhandCompat;
 import com.mojang.authlib.GameProfile;
 
 public class GTstaffForgePlayer extends FakePlayer implements IFakePlayerHolder, PlayerVisualSync {
@@ -158,6 +159,7 @@ public class GTstaffForgePlayer extends FakePlayer implements IFakePlayerHolder,
                     .sendPacket(new S04PacketEntityEquipment(entityId, index + 1, this.inventory.armorInventory[index]));
             }
         }
+        BackhandCompat.syncOffhandToWatchers(this);
     }
 
     @Override

@@ -2,22 +2,27 @@ package com.andgatech.gtstaff.integration;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.entity.player.InventoryPlayer;
 import net.minecraft.item.ItemStack;
+import net.minecraft.world.WorldServer;
 
 public final class BackhandCompat {
 
-    private static final String BACKHAND_CLASS_NAME = "xonin.backhand.Backhand";
     private static final String BACKHAND_PACKET_HANDLER_CLASS_NAME = "xonin.backhand.packet.BackhandPacketHandler";
     private static final String OFFHAND_SYNC_PACKET_CLASS_NAME = "xonin.backhand.packet.OffhandSyncItemPacket";
     private static final String GET_OFFHAND_METHOD = "backhand$getOffhandItem";
     private static final String SET_OFFHAND_METHOD = "backhand$setOffhandItem";
-    private static final Consumer<EntityPlayer> DEFAULT_OFFHAND_SYNC_ACTION = BackhandCompat::syncOffhandToTrackingReflectively;
+    private static final String BACKHAND_CLASS_NAME = "xonin.backhand.Backhand";
+    private static final Consumer<EntityPlayer> DEFAULT_OFFHAND_SYNC_ACTION = BackhandCompat::syncOffhandToWorldPlayersReflectively;
+    private static final BiConsumer<EntityPlayer, EntityPlayer> DEFAULT_OFFHAND_SYNC_TO_PLAYER_ACTION = BackhandCompat::syncOffhandToPlayerReflectively;
     private static volatile Consumer<EntityPlayer> offhandSyncAction = DEFAULT_OFFHAND_SYNC_ACTION;
+    private static volatile BiConsumer<EntityPlayer, EntityPlayer> offhandSyncToPlayerAction = DEFAULT_OFFHAND_SYNC_TO_PLAYER_ACTION;
 
     private BackhandCompat() {}
 
@@ -60,8 +65,19 @@ public final class BackhandCompat {
         offhandSyncAction.accept(player);
     }
 
+    public static void syncOffhandToPlayer(EntityPlayer player, EntityPlayer recipient) {
+        if (player == null || recipient == null || recipient == player) {
+            return;
+        }
+        offhandSyncToPlayerAction.accept(player, recipient);
+    }
+
     static void setOffhandSyncActionForTests(Consumer<EntityPlayer> testAction) {
         offhandSyncAction = testAction == null ? DEFAULT_OFFHAND_SYNC_ACTION : testAction;
+    }
+
+    static void setOffhandSyncToPlayerActionForTests(BiConsumer<EntityPlayer, EntityPlayer> testAction) {
+        offhandSyncToPlayerAction = testAction == null ? DEFAULT_OFFHAND_SYNC_TO_PLAYER_ACTION : testAction;
     }
 
     private static Object invokeInventoryMethod(InventoryPlayer inventory, String methodName, Class<?>[] parameterTypes,
@@ -91,22 +107,37 @@ public final class BackhandCompat {
         return null;
     }
 
-    private static void syncOffhandToTrackingReflectively(EntityPlayer player) {
+    private static void syncOffhandToWorldPlayersReflectively(EntityPlayer player) {
+        if (!(player.worldObj instanceof WorldServer world) || world.playerEntities == null) {
+            return;
+        }
+        for (Object watcherObj : world.playerEntities) {
+            if (watcherObj instanceof EntityPlayer watcher) {
+                syncOffhandToPlayer(player, watcher);
+            }
+        }
+    }
+
+    private static void syncOffhandToPlayerReflectively(EntityPlayer player, EntityPlayer recipient) {
+        if (!(recipient instanceof EntityPlayerMP)) {
+            return;
+        }
         try {
-            Class<?> packetClass = Class.forName(OFFHAND_SYNC_PACKET_CLASS_NAME);
-            Object packet = packetClass.getConstructor(EntityPlayer.class)
-                .newInstance(player);
+            Object packet = createOffhandSyncPacket(player);
+            if (packet == null) {
+                return;
+            }
             Class<?> packetHandlerClass = Class.forName(BACKHAND_PACKET_HANDLER_CLASS_NAME);
-            Method sendMethod = findMethod(packetHandlerClass, "sendPacketToAllTracking", 2);
+            Method sendMethod = findMethod(packetHandlerClass, "sendPacketToPlayer", 2);
             if (sendMethod == null) {
                 return;
             }
             sendMethod.setAccessible(true);
-            sendMethod.invoke(null, player, packet);
+            sendMethod.invoke(null, packet, recipient);
         } catch (ClassNotFoundException ignored) {
             // Backhand absent: nothing to sync.
         } catch (IllegalAccessException | InstantiationException | NoSuchMethodException | InvocationTargetException e) {
-            throw new IllegalStateException("Failed to sync Backhand offhand to tracking players", e);
+            throw new IllegalStateException("Failed to sync Backhand offhand to player", e);
         }
     }
 
@@ -118,5 +149,12 @@ public final class BackhandCompat {
             }
         }
         return null;
+    }
+
+    private static Object createOffhandSyncPacket(EntityPlayer player)
+        throws ClassNotFoundException, NoSuchMethodException, InstantiationException, IllegalAccessException,
+        InvocationTargetException {
+        return Class.forName(OFFHAND_SYNC_PACKET_CLASS_NAME).getConstructor(EntityPlayer.class)
+            .newInstance(player);
     }
 }

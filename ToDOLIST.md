@@ -1,9 +1,13 @@
 ﻿# TODO 列表
 
 ## 当前计划
-- [ ] 完成 `v1.1.0` 发布后的最终人工烟测：重点验证游戏内 `purge`、恢复后补皮重建、OpenBlocks/TST 联动与 mixed/legacy 回退
+- [ ] 完成 `v1.1.1` 发布后的最终人工烟测：重点验证 nextgen 假人副手显示、`purge`、恢复后补皮重建、OpenBlocks/TST 联动与 mixed/legacy 回退
 
 ## 已完成
+- [x] 发布 `v1.1.1`：将副手显示修复与 nextgen 持久化修复收口到 `master`，版本号提升到 `v1.1.1`，离线通过 `test assemble`，产物已更新为 `gtstaff-v1.1.1.jar`、`gtstaff-v1.1.1-dev.jar`、`gtstaff-v1.1.1-sources.jar`
+- [x] 修复 nextgen 假人副手客户端显示仍不生效的问题：绕过 Backhand 会拒绝 Forge `FakePlayer` 源实体的 `sendPacketToAllTracking(...)`，改为 GTstaff 自己逐玩家发送 `OffhandSyncItemPacket`，并补上 `StartTracking` 时的 nextgen 副手补同步
+- [x] 审计并修复 nextgen 迁移后的 registry 持久化缺口：`FakePlayerRegistry.save(...)` 现已统一从 `onlineRuntimes` 刷新快照，nextgen bot 运行中修改过的 monitor/repel/follow 状态不再在保存时退回注册时旧值，并补上 `FakePlayerRegistryTest` 回归
+- [x] 修复 nextgen 假人副手放置后客户端不显示的问题：`GTstaffForgePlayer.syncEquipmentToWatchers()` 现已补齐 `BackhandCompat.syncOffhandToWatchers(this)`，并新增 `FakePlayerBackhandSyncTest` 回归覆盖 nextgen 同步链
 - [x] 已将本轮 nextgen / 背包兼容 / UI / 联动修复合并覆盖到 `master`，推送 GitHub，并发布 `v1.1.0` Release：`https://github.com/HOMEFTW/GTstaff/releases/tag/v1.1.0`
 - [x] 将 nextgen runtime / 动作链 / 饰品栏与副手兼容 / TST 与 OpenBlocks 兼容 / 背包 UI 重构等本轮累计变更合并回 `master` 准备发布 `v1.1.0`
 - [x] 将项目版本号提升到 `v1.1.0` 并重新通过离线 `test assemble`，确认最新产物为 `gtstaff-v1.1.0.jar`、`gtstaff-v1.1.0-dev.jar`、`gtstaff-v1.1.0-sources.jar`
