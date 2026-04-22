@@ -6,7 +6,9 @@
 - 已将 `gradle.properties` 中的版本号提升到 `v1.1.1`
 - 已离线通过 `./gradlew.bat --offline --no-daemon -DDISABLE_BUILDSCRIPT_UPDATE_CHECK=true -PautoUpdateBuildScript=false -PdisableSpotless=true test assemble`
 - 已确认最新产物更新为 `build/libs/gtstaff-v1.1.1.jar`、`build/libs/gtstaff-v1.1.1-dev.jar`、`build/libs/gtstaff-v1.1.1-sources.jar`
-- 计划发布地址：https://github.com/HOMEFTW/GTstaff/releases/tag/v1.1.1
+- 已将 `master` 推送到 GitHub，并创建、推送标签 `v1.1.1`
+- 已在 GitHub Release 发布 `gtstaff-v1.1.1.jar`、`gtstaff-v1.1.1-dev.jar`、`gtstaff-v1.1.1-sources.jar`
+- 发布地址：https://github.com/HOMEFTW/GTstaff/releases/tag/v1.1.1
 
 ### 遇到的问题
 - 这次发布主要是对 `v1.1.0` 的 nextgen fake player 兼容收尾，重点问题集中在 Backhand 会把 Forge `FakePlayer` 判为无效玩家，导致副手同步链静默失效
